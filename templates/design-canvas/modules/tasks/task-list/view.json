@@ -1,0 +1,9 @@
+{
+  "title": "Task List",
+  "status": "approved",
+  "position": { "x": 80, "y": 80 },
+  "links": [
+    { "to": "tasks/task-detail", "label": "open task" },
+    { "to": "tasks/new-task", "label": "new task" }
+  ]
+}

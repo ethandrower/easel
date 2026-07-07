@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Easel</title>
+  <link rel="stylesheet" href="viewer.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- top toolbar -->
+    <header id="toolbar">
+      <span class="brand">▲ easel</span>
+      <div class="tools">
+        <button id="fit" title="Fit to view">◹ fit</button>
+        <button id="zoom-out" title="Zoom out">–</button>
+        <span id="zoom-label">100%</span>
+        <button id="zoom-in" title="Zoom in">+</button>
+        <input id="search" type="search" placeholder="jump to view…" autocomplete="off" />
+        <button id="add-view" title="Insert a new view">+ view</button>
+      </div>
+    </header>
+
+    <!-- the infinite canvas -->
+    <main id="canvas">
+      <div id="surface">
+        <svg id="edges" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div id="nodes"></div>
+      </div>
+    </main>
+
+    <!-- the lean contextual rail -->
+    <aside id="rail" class="empty">
+      <div id="rail-empty">Select a view to see its links and comments.</div>
+      <div id="rail-body" hidden>
+        <div class="rail-head">
+          <input id="v-title" class="v-title" />
+          <div class="v-meta">
+            <select id="v-status">
+              <option value="idea">idea</option>
+              <option value="in-progress">in progress</option>
+              <option value="in-review">in review</option>
+              <option value="approved">approved</option>
+            </select>
+            <span id="v-module" class="v-module"></span>
+          </div>
+        </div>
+
+        <section class="rail-section">
+          <h3>Related</h3>
+          <div class="rail-sub">Incoming</div>
+          <ul id="links-in" class="links"></ul>
+          <div class="rail-sub">Outgoing</div>
+          <ul id="links-out" class="links"></ul>
+        </section>
+
+        <section class="rail-section">
+          <h3>Comments <span id="comment-count" class="count"></span></h3>
+          <ul id="comments" class="comments"></ul>
+          <button id="add-comment">+ add comment</button>
+          <p id="pin-hint" hidden>Click an element in the screen to pin your comment…</p>
+        </section>
+      </div>
+    </aside>
+
+    <!-- insert-view mini form -->
+    <div id="insert-form" hidden>
+      <h3>Insert a view</h3>
+      <label>Module <input id="insert-module" placeholder="tasks" /></label>
+      <label>Title <input id="insert-title" placeholder="Task Filters" /></label>
+      <label>Link from (optional) <input id="insert-parent" placeholder="tasks/task-list" /></label>
+      <div class="insert-actions">
+        <button id="insert-cancel">Cancel</button>
+        <button id="insert-create" class="primary">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="viewer.js"></script>
+</body>
+</html>

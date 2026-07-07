@@ -1,0 +1,31 @@
+{
+  "name": "easel",
+  "version": "0.1.0",
+  "description": "An infinite-canvas workbench for standalone HTML prototypes, navigable as a graph and edited by Claude Code. Drop into any repo.",
+  "type": "module",
+  "bin": {
+    "easel": "bin/cli.mjs"
+  },
+  "scripts": {
+    "start": "node bin/cli.mjs serve",
+    "demo": "node bin/cli.mjs serve --canvas templates/design-canvas"
+  },
+  "files": [
+    "bin",
+    "src",
+    "templates"
+  ],
+  "keywords": [
+    "prototype",
+    "design",
+    "canvas",
+    "html",
+    "claude",
+    "wireframe",
+    "design-system"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18"
+  }
+}

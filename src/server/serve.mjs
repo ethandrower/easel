@@ -1,0 +1,225 @@
+/*
+ * Easel dev server — zero dependencies, works in any repo.
+ *
+ * Serves two things at once:
+ *   1. the viewer app   (this package's src/viewer)          →  /            /app/*
+ *   2. the host repo's design canvas (./design-canvas by default) →  /canvas/*
+ *
+ * Plus a small JSON API the viewer uses to read the module/view tree and to
+ * persist annotations, view metadata, and newly-inserted views straight to the
+ * files on disk — which is exactly what Claude Code then reads and edits.
+ *
+ * The server hardcodes nothing about any particular design system; the canvas
+ * directory is the sole source of truth.
+ */
+import http from 'node:http';
+import { promises as fs } from 'node:fs';
+import fss from 'node:fs';
+import path from 'node:path';
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.woff2': 'font/woff2',
+};
+
+const slug = (s) =>
+  String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'untitled';
+
+const json = (res, code, data) =>
+  res.writeHead(code, { 'Content-Type': 'application/json' }).end(JSON.stringify(data));
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let b = '';
+    req.on('data', (c) => (b += c));
+    req.on('end', () => {
+      try { resolve(b ? JSON.parse(b) : {}); } catch (e) { reject(e); }
+    });
+  });
+}
+
+async function readJSON(file, fallback) {
+  try { return JSON.parse(await fs.readFile(file, 'utf8')); }
+  catch { return fallback; }
+}
+const writeJSON = (file, data) => fs.writeFile(file, JSON.stringify(data, null, 2) + '\n');
+const exists = (p) => fss.existsSync(p);
+
+// Walk modules/<module>/<view>/ and assemble the graph the viewer renders.
+async function scanTree(canvasRoot) {
+  const modulesDir = path.join(canvasRoot, 'modules');
+  const out = { modules: [] };
+  let moduleNames = [];
+  try { moduleNames = (await fs.readdir(modulesDir, { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name); }
+  catch { return out; }
+
+  for (const mod of moduleNames) {
+    const modDir = path.join(modulesDir, mod);
+    const meta = await readJSON(path.join(modDir, 'module.json'), {});
+    const views = [];
+    const viewNames = (await fs.readdir(modDir, { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name);
+    for (const view of viewNames) {
+      const viewDir = path.join(modDir, view);
+      if (!exists(path.join(viewDir, 'view.json'))) continue;
+      const vjson = await readJSON(path.join(viewDir, 'view.json'), {});
+      const cjson = await readJSON(path.join(viewDir, 'comments.json'), { comments: [] });
+      const rel = `${mod}/${view}`;
+      views.push({
+        id: rel,
+        module: mod,
+        view,
+        title: vjson.title || view,
+        status: vjson.status || 'idea',
+        position: vjson.position || null,
+        links: Array.isArray(vjson.links) ? vjson.links : [],
+        url: `/canvas/modules/${mod}/${view}/index.html`,
+        openComments: (cjson.comments || []).filter((c) => c.status !== 'resolved').length,
+        totalComments: (cjson.comments || []).length,
+      });
+    }
+    out.modules.push({
+      id: mod,
+      title: meta.title || mod,
+      color: meta.color || null,
+      order: meta.order ?? 999,
+      views,
+    });
+  }
+  out.modules.sort((a, b) => a.order - b.order);
+  return out;
+}
+
+export function startServer({ canvasRoot, viewerRoot, port = 4321 }) {
+  // live reload: hold SSE clients, ping on any change under the canvas dir
+  const sseClients = new Set();
+  const broadcast = (file) => {
+    const payload = `data: ${JSON.stringify({ file })}\n\n`;
+    for (const res of sseClients) res.write(payload);
+  };
+  let debounce;
+  try {
+    fss.watch(canvasRoot, { recursive: true }, (_evt, file) => {
+      if (!file || String(file).includes('.git')) return;
+      clearTimeout(debounce);
+      debounce = setTimeout(() => broadcast(String(file).replace(/\\/g, '/')), 60);
+    });
+  } catch { /* recursive watch unsupported on some platforms; live reload simply off */ }
+
+  const safeJoin = (root, rel) => {
+    const p = path.join(root, rel);
+    if (!p.startsWith(root)) return null; // path traversal guard
+    return p;
+  };
+
+  const serveFile = async (res, file) => {
+    try {
+      const data = await fs.readFile(file);
+      res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' }).end(data);
+    } catch {
+      res.writeHead(404, { 'Content-Type': 'text/plain' }).end('not found');
+    }
+  };
+
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url, `http://localhost:${port}`);
+    const p = url.pathname;
+
+    // ---- live reload stream -------------------------------------------------
+    if (p === '/__reload') {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+      res.write('retry: 1000\n\n');
+      sseClients.add(res);
+      req.on('close', () => sseClients.delete(res));
+      return;
+    }
+
+    // ---- API ----------------------------------------------------------------
+    if (p === '/api/tree') return json(res, 200, await scanTree(canvasRoot));
+
+    if (p === '/api/view') {
+      const rel = url.searchParams.get('path') || '';
+      const dir = safeJoin(path.join(canvasRoot, 'modules'), rel);
+      if (!dir) return json(res, 400, { error: 'bad path' });
+      if (req.method === 'GET') {
+        return json(res, 200, {
+          view: await readJSON(path.join(dir, 'view.json'), {}),
+          comments: await readJSON(path.join(dir, 'comments.json'), { comments: [] }),
+        });
+      }
+      if (req.method === 'POST') {
+        await writeJSON(path.join(dir, 'view.json'), await readBody(req));
+        return json(res, 200, { ok: true });
+      }
+    }
+
+    if (p === '/api/comments' && req.method === 'POST') {
+      const rel = url.searchParams.get('path') || '';
+      const dir = safeJoin(path.join(canvasRoot, 'modules'), rel);
+      if (!dir) return json(res, 400, { error: 'bad path' });
+      await writeJSON(path.join(dir, 'comments.json'), await readBody(req));
+      return json(res, 200, { ok: true });
+    }
+
+    // Insert a new view: scaffold from _template.html, wire into the graph.
+    if (p === '/api/insert' && req.method === 'POST') {
+      const { module: mod, title, parent, position } = await readBody(req);
+      if (!mod || !title) return json(res, 400, { error: 'module and title required' });
+      const modDir = path.join(canvasRoot, 'modules', slug(mod));
+      await fs.mkdir(modDir, { recursive: true });
+      if (!exists(path.join(modDir, 'module.json')))
+        await writeJSON(path.join(modDir, 'module.json'), { title: mod, order: 999 });
+      let id = slug(title);
+      let n = 1;
+      while (exists(path.join(modDir, id))) id = `${slug(title)}-${++n}`;
+      const viewDir = path.join(modDir, id);
+      await fs.mkdir(viewDir, { recursive: true });
+      let tpl = await fs.readFile(path.join(canvasRoot, '_template.html'), 'utf8').catch(() => '<!doctype html><html><head><script src="../../../shared/ds.js"></script></head><body><main class="p-6"><h1>__TITLE__</h1></main></body></html>');
+      tpl = tpl.replace(/__TITLE__/g, title);
+      await fs.writeFile(path.join(viewDir, 'index.html'), tpl);
+      await writeJSON(path.join(viewDir, 'view.json'), { title, status: 'idea', position: position || { x: 80, y: 80 }, links: [] });
+      await writeJSON(path.join(viewDir, 'comments.json'), { comments: [] });
+      // link parent -> new view
+      if (parent) {
+        const parentDir = safeJoin(path.join(canvasRoot, 'modules'), parent);
+        if (parentDir) {
+          const pv = await readJSON(path.join(parentDir, 'view.json'), null);
+          if (pv) {
+            pv.links = pv.links || [];
+            pv.links.push({ to: `${slug(mod)}/${id}`, label: '' });
+            await writeJSON(path.join(parentDir, 'view.json'), pv);
+          }
+        }
+      }
+      return json(res, 200, { ok: true, path: `${slug(mod)}/${id}` });
+    }
+
+    // ---- static: host canvas ------------------------------------------------
+    if (p.startsWith('/canvas/')) {
+      const file = safeJoin(canvasRoot, decodeURIComponent(p.slice('/canvas/'.length)));
+      if (!file) return json(res, 403, { error: 'forbidden' });
+      return serveFile(res, file);
+    }
+
+    // ---- static: viewer app -------------------------------------------------
+    const rel = p === '/' ? 'index.html' : decodeURIComponent(p.replace(/^\/app\//, '').replace(/^\//, ''));
+    const file = safeJoin(viewerRoot, rel);
+    if (!file) return json(res, 403, { error: 'forbidden' });
+    return serveFile(res, file);
+  });
+
+  return new Promise((resolve) => {
+    server.listen(port, () => {
+      console.log(`\n  ▲ easel  →  http://localhost:${port}`);
+      console.log(`     canvas: ${canvasRoot}\n`);
+      resolve(server);
+    });
+  });
+}
