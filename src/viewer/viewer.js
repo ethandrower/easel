@@ -33,6 +33,7 @@
   function applyTransform() {
     surface.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.z})`;
     $('zoom-label').textContent = Math.round(view.z * 100) + '%';
+    drawMinimapViewport();
   }
   const screenToWorld = (sx, sy) => ({ x: (sx - view.x) / view.z, y: (sy - view.y) / view.z });
   const canvasPoint = (e) => { const r = canvas.getBoundingClientRect(); return screenToWorld(e.clientX - r.left, e.clientY - r.top); };
@@ -64,7 +65,9 @@
     nodes.clear();
     all.forEach((v, i) => nodes.set(v.id, { data: v, cache: caches[i], dom: null }));
     render();
-    if (keepSelection && selected && nodes.has(selected)) select(selected);
+    // don't rebuild the rail out from under an active inline editor (rename / composer)
+    const editing = !$('composer').hidden || !!document.querySelector('.rename-input');
+    if (keepSelection && selected && nodes.has(selected)) { if (!editing) select(selected); }
     else if (!nodes.has(selected)) clearSelection();
   }
 
@@ -104,7 +107,11 @@
       head.addEventListener('dblclick', () => flyTo(path));
     }
     if (selected && nodes.has(selected)) nodes.get(selected).dom.classList.add('selected');
+    drawGroups();
     drawEdges();
+    applyFilter();
+    drawMinimap();
+    updateOverviewCount();
     applyTransform();
   }
 
@@ -139,6 +146,126 @@
       });
     }
   }
+
+  // --- module group backdrops ----------------------------------------------
+  function drawGroups() {
+    const groups = $('groups');
+    groups.innerHTML = '';
+    const byMod = new Map();
+    for (const [, n] of nodes) {
+      const m = n.data._module;
+      if (!byMod.has(m.id)) byMod.set(m.id, { mod: m, minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+      const g = byMod.get(m.id), d = n.data.position;
+      g.minX = Math.min(g.minX, d.x); g.minY = Math.min(g.minY, d.y);
+      g.maxX = Math.max(g.maxX, d.x + FRAME_W); g.maxY = Math.max(g.maxY, d.y + HEAD_H + FRAME_H);
+    }
+    const PAD = 60;
+    for (const [, g] of byMod) {
+      const color = g.mod.color || '#94a3b8';
+      const div = el('div', 'group');
+      div.style.left = (g.minX - PAD) + 'px'; div.style.top = (g.minY - PAD) + 'px';
+      div.style.width = (g.maxX - g.minX + PAD * 2) + 'px'; div.style.height = (g.maxY - g.minY + PAD * 2) + 'px';
+      div.style.borderColor = color; div.style.background = color + '12';
+      const label = el('div', 'group-label', g.mod.title); label.style.color = color;
+      div.append(label);
+      groups.append(div);
+    }
+  }
+
+  // --- status filter --------------------------------------------------------
+  const activeStatus = new Set(['idea', 'in-progress', 'in-review', 'approved']);
+  function applyFilter() {
+    for (const [, n] of nodes) n.dom && n.dom.classList.toggle('dim', !activeStatus.has(n.data.status));
+  }
+  [...document.querySelectorAll('.chip')].forEach((chip) => {
+    chip.classList.add('on');
+    chip.addEventListener('click', () => {
+      const s = chip.dataset.status;
+      if (activeStatus.has(s)) { activeStatus.delete(s); chip.classList.remove('on'); chip.classList.add('off'); }
+      else { activeStatus.add(s); chip.classList.add('on'); chip.classList.remove('off'); }
+      applyFilter();
+    });
+  });
+
+  // --- comment overview drawer ---------------------------------------------
+  function updateOverviewCount() {
+    let t = 0;
+    for (const [, n] of nodes) t += (n.cache.comments.comments || []).filter((c) => c.status !== 'resolved').length;
+    $('overview-count').textContent = t || '';
+    if (!$('overview').hidden) buildOverview();
+  }
+  function buildOverview() {
+    const list = $('overview-list');
+    list.innerHTML = '';
+    let any = false;
+    for (const [path, n] of nodes) {
+      (n.cache.comments.comments || []).forEach((c, i) => {
+        if (c.status === 'resolved') return;
+        any = true;
+        const item = el('div', 'ov-item');
+        item.append(el('div', 'ov-view', n.data.title), el('div', 'ov-text', c.text));
+        item.addEventListener('click', () => { flyTo(path); setTimeout(() => highlightComment(i), 60); });
+        list.append(item);
+      });
+    }
+    if (!any) list.append(el('div', 'ov-empty', 'No open comments. Nice.'));
+  }
+  $('overview-toggle').addEventListener('click', () => {
+    const ov = $('overview');
+    ov.hidden = !ov.hidden;
+    if (!ov.hidden) buildOverview();
+  });
+  $('overview-close').addEventListener('click', () => { $('overview').hidden = true; });
+
+  // --- minimap --------------------------------------------------------------
+  const MM_W = 200, MM_H = 140, MM_PAD = 20;
+  let mmScale = 1, mmOff = { x: 0, y: 0 };
+  function drawMinimap() {
+    const mm = $('minimap');
+    mm.innerHTML = '';
+    if (!nodes.size) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const [, n] of nodes) {
+      const d = n.data.position;
+      minX = Math.min(minX, d.x); minY = Math.min(minY, d.y);
+      maxX = Math.max(maxX, d.x + FRAME_W); maxY = Math.max(maxY, d.y + HEAD_H + FRAME_H);
+    }
+    mmScale = Math.min((MM_W - MM_PAD) / (maxX - minX), (MM_H - MM_PAD) / (maxY - minY));
+    mmOff = { x: minX, y: minY };
+    for (const [, n] of nodes) {
+      const d = n.data.position;
+      const r = document.createElementNS(SVGNS, 'rect');
+      r.setAttribute('class', 'mm-node');
+      r.setAttribute('x', (d.x - minX) * mmScale + MM_PAD / 2);
+      r.setAttribute('y', (d.y - minY) * mmScale + MM_PAD / 2);
+      r.setAttribute('width', FRAME_W * mmScale);
+      r.setAttribute('height', (HEAD_H + FRAME_H) * mmScale);
+      r.setAttribute('rx', 2);
+      mm.append(r);
+    }
+    const vp = document.createElementNS(SVGNS, 'rect');
+    vp.setAttribute('class', 'mm-view'); vp.id = 'mm-view';
+    mm.append(vp);
+    drawMinimapViewport();
+  }
+  function drawMinimapViewport() {
+    const vp = document.getElementById('mm-view');
+    if (!vp) return;
+    const r = canvas.getBoundingClientRect();
+    const wx = -view.x / view.z, wy = -view.y / view.z;
+    vp.setAttribute('x', (wx - mmOff.x) * mmScale + MM_PAD / 2);
+    vp.setAttribute('y', (wy - mmOff.y) * mmScale + MM_PAD / 2);
+    vp.setAttribute('width', (r.width / view.z) * mmScale);
+    vp.setAttribute('height', (r.height / view.z) * mmScale);
+  }
+  $('minimap').addEventListener('click', (e) => {
+    const r = $('minimap').getBoundingClientRect();
+    const wx = (e.clientX - r.left - MM_PAD / 2) / mmScale + mmOff.x;
+    const wy = (e.clientY - r.top - MM_PAD / 2) / mmScale + mmOff.y;
+    const cr = canvas.getBoundingClientRect();
+    view.x = cr.width / 2 - wx * view.z; view.y = cr.height / 2 - wy * view.z;
+    applyTransform();
+  });
 
   function renderPins(path) {
     const n = nodes.get(path);
@@ -179,8 +306,11 @@
     $('v-module').textContent = n.data._module.title;
     // rebuild the id row fresh (the inline rename UI may have replaced its contents)
     const idWrap = document.querySelector('.v-id');
-    idWrap.innerHTML = '<code id="v-path"></code>';
-    idWrap.firstChild.textContent = path;
+    if (idWrap) {
+      idWrap.textContent = '';
+      const code = document.createElement('code'); code.id = 'v-path'; code.textContent = path;
+      idWrap.append(code);
+    }
     $('act-delete').textContent = 'delete';
     $('act-delete').classList.remove('armed');
     $('composer').hidden = true; $('pin-hint').hidden = true;

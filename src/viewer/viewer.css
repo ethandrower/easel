@@ -31,8 +31,40 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
 #zoom-label { font-size: 11px; color: var(--muted); width: 40px; text-align: center; }
 #search { font: inherit; font-size: 12px; border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; width: 160px; margin-left: 8px; }
 
+/* status filter chips */
+#filters { display: flex; gap: 4px; }
+.chip { font: inherit; font-size: 11px; border: 1px solid var(--line); background: #fff; color: var(--muted); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+.chip.off { opacity: .45; text-decoration: line-through; }
+.chip[data-status="idea"].on { border-color: var(--idea); color: var(--idea); }
+.chip[data-status="in-progress"].on { border-color: var(--in-progress); color: var(--in-progress); }
+.chip[data-status="in-review"].on { border-color: var(--in-review); color: var(--in-review); }
+.chip[data-status="approved"].on { border-color: var(--approved); color: var(--approved); }
+#overview-toggle { position: relative; }
+#overview-count { color: #fff; background: var(--accent); border-radius: 999px; padding: 0 6px; font-size: 10px; }
+
 /* canvas */
 #canvas { grid-area: canvas; position: relative; overflow: hidden; cursor: grab; }
+.node.dim { opacity: .12; filter: grayscale(1); pointer-events: none; }
+
+/* module grouping backdrops */
+#groups { position: absolute; left: 0; top: 0; }
+.group { position: absolute; border: 2px solid; border-radius: 18px; opacity: .5; }
+.group-label { position: absolute; top: -34px; left: 0; font-size: 22px; font-weight: 700; white-space: nowrap; }
+
+/* minimap */
+#minimap { position: absolute; right: 14px; bottom: 14px; width: 200px; height: 140px; background: rgba(255,255,255,.9); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.12); overflow: visible; }
+#minimap rect.mm-node { fill: #cbd2dc; stroke: #fff; }
+#minimap rect.mm-view { fill: none; stroke: var(--accent); stroke-width: 2; }
+
+/* comment overview drawer */
+#overview { position: absolute; left: 0; top: var(--header-h); bottom: 0; width: 320px; background: var(--panel); border-right: 1px solid var(--line); z-index: 20; overflow-y: auto; box-shadow: 4px 0 16px rgba(0,0,0,.06); }
+.overview-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--line); font-weight: 600; font-size: 13px; }
+.overview-head button { border: 0; background: none; font-size: 20px; cursor: pointer; color: var(--muted); }
+.ov-item { padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.ov-item:hover { background: #f0f4ff; }
+.ov-view { font-size: 11px; color: var(--accent); font-weight: 600; }
+.ov-text { font-size: 13px; margin-top: 3px; }
+.ov-empty { padding: 24px 16px; color: var(--muted); font-size: 13px; }
 #canvas.panning { cursor: grabbing; }
 #surface { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
 #edges { position: absolute; overflow: visible; left: 0; top: 0; width: 1px; height: 1px; }

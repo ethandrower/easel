@@ -11,7 +11,14 @@
     <!-- top toolbar -->
     <header id="toolbar">
       <span class="brand">▲ easel</span>
+      <div id="filters" title="Filter by status">
+        <button class="chip" data-status="idea">idea</button>
+        <button class="chip" data-status="in-progress">in progress</button>
+        <button class="chip" data-status="in-review">in review</button>
+        <button class="chip" data-status="approved">approved</button>
+      </div>
       <div class="tools">
+        <button id="overview-toggle" title="All open comments">☰ comments <span id="overview-count"></span></button>
         <button id="fit" title="Fit to view">◹ fit</button>
         <button id="zoom-out" title="Zoom out">–</button>
         <span id="zoom-label">100%</span>
@@ -25,10 +32,17 @@
     <!-- the infinite canvas -->
     <main id="canvas">
       <div id="surface">
+        <div id="groups"></div>
         <svg id="edges" xmlns="http://www.w3.org/2000/svg"></svg>
         <div id="nodes"></div>
       </div>
+      <svg id="minimap" xmlns="http://www.w3.org/2000/svg"></svg>
     </main>
+
+    <aside id="overview" hidden>
+      <div class="overview-head">Open comments <button id="overview-close">×</button></div>
+      <div id="overview-list"></div>
+    </aside>
 
     <!-- the lean contextual rail -->
     <aside id="rail" class="empty">
