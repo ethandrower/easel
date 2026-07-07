@@ -98,6 +98,9 @@
       const ph = el('div', 'placeholder');
       ph.append(el('div', 'ph-title', d.title));
       frame.append(ph);
+      const catchEl = el('div', 'node-catch');
+      catchEl.addEventListener('click', (e) => onViewCommentClick(e, path, frame));
+      frame.append(catchEl);
       node.append(frame);
 
       const handle = el('div', 'link-handle', '↗');
@@ -852,6 +855,51 @@
     saveView(selected); render(); select(selected);
   });
 
+  // --- tool modes (pointer / comment) : drop comments on any view ----------
+  let tool = 'pointer';
+  let dropContext = null, dropPath = null;
+  function setTool(t) {
+    tool = t;
+    document.body.classList.toggle('mode-comment', t === 'comment');
+    $('tool-pointer').classList.toggle('on', t === 'pointer');
+    $('tool-comment').classList.toggle('on', t === 'comment');
+    if (t !== 'comment') { $('drop').hidden = true; dropContext = null; }
+  }
+  $('tool-pointer').addEventListener('click', () => setTool('pointer'));
+  $('tool-comment').addEventListener('click', () => setTool('comment'));
+
+  function onViewCommentClick(e, path, frame) {
+    const n = nodes.get(path);
+    if (!n || !n.mounted || !n.iframe) { toast('Zoom in a little to comment on this view'); return; }
+    let doc; try { doc = n.iframe.contentDocument; } catch { return; }
+    if (!doc) return;
+    const rect = frame.getBoundingClientRect();
+    const elm = doc.elementFromPoint((e.clientX - rect.left) / view.z, (e.clientY - rect.top) / view.z);
+    if (!elm) return;
+    select(path);
+    dropPath = path;
+    dropContext = captureContext(elm);
+    $('drop-sel').textContent = dropContext.selector;
+    $('drop-text').value = '';
+    const d = $('drop');
+    d.hidden = false;
+    const w = 300, h = d.offsetHeight || 150;
+    d.style.left = Math.max(8, Math.min(e.clientX, window.innerWidth - w - 12)) + 'px';
+    d.style.top = Math.min(e.clientY + 8, window.innerHeight - h - 12) + 'px';
+    $('drop-text').focus();
+  }
+  $('drop-cancel').addEventListener('click', () => { $('drop').hidden = true; dropContext = null; });
+  $('drop-save').addEventListener('click', async () => {
+    const text = $('drop-text').value.trim();
+    if (!text || !dropPath) { $('drop').hidden = true; return; }
+    const n = nodes.get(dropPath);
+    n.cache.comments.comments = n.cache.comments.comments || [];
+    n.cache.comments.comments.push({ id: 'c' + Date.now(), text, status: 'open', ...dropContext });
+    await saveComments(dropPath);
+    $('drop').hidden = true; dropContext = null;
+    fillComments(dropPath); renderPins(dropPath); render();
+  });
+
   // --- toolbar --------------------------------------------------------------
   $('fit').addEventListener('click', fit);
   $('zoom-in').addEventListener('click', () => { view.z = Math.min(2, view.z * 1.2); applyTransform(); });
@@ -883,7 +931,9 @@
   document.addEventListener('keydown', (e) => {
     if (/input|textarea|select/i.test(e.target.tagName)) return;
     if (e.key === 'f') fit();
-    if (e.key === 'Escape') { $('insert-form').hidden = true; $('edge-pop').hidden = true; $('composer').hidden = true; closeFocus(); }
+    if (e.key === 'v' || e.key === 'V') setTool('pointer');
+    if (e.key === 'c' || e.key === 'C') setTool('comment');
+    if (e.key === 'Escape') { $('insert-form').hidden = true; $('edge-pop').hidden = true; $('composer').hidden = true; $('drop').hidden = true; closeFocus(); setTool('pointer'); }
     if (e.key === '=' || e.key === '+') { view.z = Math.min(2, view.z * 1.2); applyTransform(); }
     if (e.key === '-') { view.z = Math.max(0.05, view.z / 1.2); applyTransform(); }
   });

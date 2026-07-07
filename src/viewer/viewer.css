@@ -31,6 +31,21 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
 #zoom-label { font-size: 11px; color: var(--muted); width: 40px; text-align: center; }
 #search { font: inherit; font-size: 12px; border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; width: 160px; margin-left: 8px; }
 
+/* tool switcher (pointer / comment) */
+#tools-mode { display: flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.tool { font: inherit; font-size: 12px; border: 0; background: #fff; color: var(--muted); padding: 5px 10px; cursor: pointer; }
+.tool + .tool { border-left: 1px solid var(--line); }
+.tool.on { background: var(--accent); color: #fff; }
+
+/* click-catch overlay: active only in comment mode, drops comments on any view */
+.node-catch { position: absolute; inset: 0; z-index: 4; display: none; }
+body.mode-comment .node-catch { display: block; cursor: crosshair; }
+
+/* floating drop composer (comment mode) */
+#drop { position: fixed; z-index: 55; width: 300px; background: #fff; border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.25); padding: 12px; }
+#drop[hidden] { display: none; }
+#drop textarea { width: 100%; font: inherit; font-size: 14px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; margin-top: 8px; resize: vertical; }
+
 /* status filter chips */
 #filters { display: flex; gap: 4px; }
 .chip { font: inherit; font-size: 11px; border: 1px solid var(--line); background: #fff; color: var(--muted); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
