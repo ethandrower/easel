@@ -19,6 +19,8 @@ Then:
 3. **Annotate** — pin a comment to any element on a screen.
 4. **Edit via Claude** — in Claude Code: *"resolve the open canvas comments."* It reads your pins, edits the HTML at each pinned element, and marks them resolved. The canvas live-reloads.
 
+**New to it?** [GUIDE.md](GUIDE.md) walks through the full workflow — creating views (UI, the design loop, or by hand), the three ways to link screens, commenting, and handing feedback to Claude Code.
+
 ## Features
 
 - **Graph canvas** — pan/zoom infinite canvas of live prototype iframes, with edges you draw between views. Zoom out for the bird's-eye, zoom in to click through a real prototype.
