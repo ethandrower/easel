@@ -53,6 +53,46 @@ async function readJSON(file, fallback) {
 const writeJSON = (file, data) => fs.writeFile(file, JSON.stringify(data, null, 2) + '\n');
 const exists = (p) => fss.existsSync(p);
 
+// List every view directory as { path, dir } across all modules.
+async function allViewDirs(canvasRoot) {
+  const modulesDir = path.join(canvasRoot, 'modules');
+  const out = [];
+  let mods = [];
+  try { mods = (await fs.readdir(modulesDir, { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name); }
+  catch { return out; }
+  for (const mod of mods) {
+    const modDir = path.join(modulesDir, mod);
+    for (const v of (await fs.readdir(modDir, { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name)) {
+      if (exists(path.join(modDir, v, 'view.json'))) out.push({ path: `${mod}/${v}`, dir: path.join(modDir, v) });
+    }
+  }
+  return out;
+}
+
+// Remove/rewrite edges that point at `oldPath` across every view.
+async function rewriteEdges(canvasRoot, oldPath, newPath /* null = delete */) {
+  for (const { dir } of await allViewDirs(canvasRoot)) {
+    const v = await readJSON(path.join(dir, 'view.json'), null);
+    if (!v || !Array.isArray(v.links)) continue;
+    const before = v.links.length;
+    v.links = newPath
+      ? v.links.map((l) => (l.to === oldPath ? { ...l, to: newPath } : l))
+      : v.links.filter((l) => l.to !== oldPath);
+    if (v.links.length !== before || newPath) await writeJSON(path.join(dir, 'view.json'), v);
+  }
+}
+
+async function copyDir(src, dst) {
+  await fs.mkdir(dst, { recursive: true });
+  for (const entry of await fs.readdir(src, { withFileTypes: true })) {
+    const s = path.join(src, entry.name), d = path.join(dst, entry.name);
+    if (entry.isDirectory()) await copyDir(s, d);
+    else await fs.copyFile(s, d);
+  }
+}
+
+async function rmDir(p) { await fs.rm(p, { recursive: true, force: true }); }
+
 // Walk modules/<module>/<view>/ and assemble the graph the viewer renders.
 async function scanTree(canvasRoot) {
   const modulesDir = path.join(canvasRoot, 'modules');
@@ -184,21 +224,61 @@ export function startServer({ canvasRoot, viewerRoot, port = 4321 }) {
       let tpl = await fs.readFile(path.join(canvasRoot, '_template.html'), 'utf8').catch(() => '<!doctype html><html><head><script src="../../../shared/ds.js"></script></head><body><main class="p-6"><h1>__TITLE__</h1></main></body></html>');
       tpl = tpl.replace(/__TITLE__/g, title);
       await fs.writeFile(path.join(viewDir, 'index.html'), tpl);
-      await writeJSON(path.join(viewDir, 'view.json'), { title, status: 'idea', position: position || { x: 80, y: 80 }, links: [] });
+      // place the new node below its parent (if any), else at the given/default spot
+      let pos = position;
+      const parentDir = parent ? safeJoin(path.join(canvasRoot, 'modules'), parent) : null;
+      let pv = parentDir ? await readJSON(path.join(parentDir, 'view.json'), null) : null;
+      if (!pos) pos = pv && pv.position ? { x: pv.position.x, y: pv.position.y + 900 } : { x: 80, y: 80 };
+      await writeJSON(path.join(viewDir, 'view.json'), { title, status: 'idea', position: pos, links: [] });
       await writeJSON(path.join(viewDir, 'comments.json'), { comments: [] });
-      // link parent -> new view
-      if (parent) {
-        const parentDir = safeJoin(path.join(canvasRoot, 'modules'), parent);
-        if (parentDir) {
-          const pv = await readJSON(path.join(parentDir, 'view.json'), null);
-          if (pv) {
-            pv.links = pv.links || [];
-            pv.links.push({ to: `${slug(mod)}/${id}`, label: '' });
-            await writeJSON(path.join(parentDir, 'view.json'), pv);
-          }
-        }
+      if (pv) {
+        pv.links = pv.links || [];
+        pv.links.push({ to: `${slug(mod)}/${id}`, label: '' });
+        await writeJSON(path.join(parentDir, 'view.json'), pv);
       }
       return json(res, 200, { ok: true, path: `${slug(mod)}/${id}` });
+    }
+
+    // Delete a view: remove its folder and drop every edge pointing at it.
+    if (p === '/api/delete' && req.method === 'POST') {
+      const { path: rel } = await readBody(req);
+      const dir = safeJoin(path.join(canvasRoot, 'modules'), rel || '');
+      if (!dir || !exists(dir)) return json(res, 400, { error: 'bad path' });
+      await rmDir(dir);
+      await rewriteEdges(canvasRoot, rel, null);
+      return json(res, 200, { ok: true });
+    }
+
+    // Duplicate a view within its module (great for variants).
+    if (p === '/api/duplicate' && req.method === 'POST') {
+      const { path: rel } = await readBody(req);
+      const dir = safeJoin(path.join(canvasRoot, 'modules'), rel || '');
+      if (!dir || !exists(dir)) return json(res, 400, { error: 'bad path' });
+      const [mod, view] = rel.split('/');
+      const modDir = path.join(canvasRoot, 'modules', mod);
+      let id = `${view}-copy`, n = 1;
+      while (exists(path.join(modDir, id))) id = `${view}-copy-${++n}`;
+      const dst = path.join(modDir, id);
+      await copyDir(dir, dst);
+      const v = await readJSON(path.join(dst, 'view.json'), {});
+      v.title = (v.title || view) + ' copy';
+      v.position = { x: (v.position?.x || 80) + 80, y: (v.position?.y || 80) + 80 };
+      await writeJSON(path.join(dst, 'view.json'), v);
+      return json(res, 200, { ok: true, path: `${mod}/${id}` });
+    }
+
+    // Rename a view's folder id and repoint every edge that referenced it.
+    if (p === '/api/rename' && req.method === 'POST') {
+      const { path: rel, id: rawId } = await readBody(req);
+      const dir = safeJoin(path.join(canvasRoot, 'modules'), rel || '');
+      if (!dir || !exists(dir) || !rawId) return json(res, 400, { error: 'bad path' });
+      const [mod] = rel.split('/');
+      const id = slug(rawId);
+      const dst = path.join(canvasRoot, 'modules', mod, id);
+      if (exists(dst)) return json(res, 409, { error: 'id already exists' });
+      await fs.rename(dir, dst);
+      await rewriteEdges(canvasRoot, rel, `${mod}/${id}`);
+      return json(res, 200, { ok: true, path: `${mod}/${id}` });
     }
 
     // ---- static: host canvas ------------------------------------------------

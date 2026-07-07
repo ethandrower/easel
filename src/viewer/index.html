@@ -17,6 +17,7 @@
         <span id="zoom-label">100%</span>
         <button id="zoom-in" title="Zoom in">+</button>
         <input id="search" type="search" placeholder="jump to view…" autocomplete="off" />
+        <button id="copy-all" title="Copy a prompt to resolve every open comment">⧉ resolve all</button>
         <button id="add-view" title="Insert a new view">+ view</button>
       </div>
     </header>
@@ -44,6 +45,12 @@
             </select>
             <span id="v-module" class="v-module"></span>
           </div>
+          <div class="v-id"><code id="v-path"></code></div>
+          <div class="v-actions">
+            <button id="act-rename" title="Rename the folder id">rename</button>
+            <button id="act-duplicate" title="Duplicate this view">duplicate</button>
+            <button id="act-delete" class="danger" title="Delete this view">delete</button>
+          </div>
         </div>
 
         <section class="rail-section">
@@ -59,6 +66,15 @@
           <ul id="comments" class="comments"></ul>
           <button id="add-comment">+ add comment</button>
           <p id="pin-hint" hidden>Click an element in the screen to pin your comment…</p>
+          <div id="composer" hidden>
+            <div class="composer-sel"><code id="composer-selector"></code></div>
+            <textarea id="composer-text" rows="3" placeholder="Describe the change…"></textarea>
+            <div class="composer-actions">
+              <button id="composer-cancel">Cancel</button>
+              <button id="composer-save" class="primary">Add comment</button>
+            </div>
+          </div>
+          <button id="copy-prompt" class="copy-prompt" title="Copy a ready-to-paste instruction for Claude Code">⧉ Copy Claude prompt</button>
         </section>
       </div>
     </aside>
@@ -74,6 +90,12 @@
         <button id="insert-create" class="primary">Create</button>
       </div>
     </div>
+    <div id="edge-pop" hidden>
+      <input id="edge-label" placeholder="edge label" />
+      <button id="edge-save">save</button>
+      <button id="edge-del" class="del">delete</button>
+    </div>
+    <div id="toast"></div>
   </div>
 
   <script src="viewer.js"></script>
