@@ -316,7 +316,7 @@
       pin.style.left = (r ? r.left + r.width / 2 : (c.x || 20)) + 'px';
       pin.style.top = (r ? r.top : (c.y || 20)) + HEAD_H + 'px';
       pin.title = c.text;
-      pin.addEventListener('mousedown', (e) => { e.stopPropagation(); select(path); highlightComment(i); });
+      pin.addEventListener('mousedown', (e) => { e.stopPropagation(); select(path); highlightComment(i); openCommentPop(path, i, e.clientX, e.clientY); });
       n.dom.append(pin);
     });
   }
@@ -406,6 +406,48 @@
     await saveComments(path);
     fillComments(path); renderPins(path); render();
   }
+
+  // --- comment popover: click a pin to read / resolve / delete it -----------
+  let commentPopRef = null;
+  function openCommentPop(path, i, x, y) {
+    const c = (nodes.get(path) && nodes.get(path).cache.comments.comments || [])[i];
+    if (!c) return;
+    commentPopRef = { path, i };
+    $('cp-text').textContent = c.text;
+    $('cp-meta').textContent = `${nodes.get(path).data.title} · ${c.status || 'open'}` + (c.selector ? `\n${c.selector}` : '');
+    $('cp-resolve').textContent = c.status === 'resolved' ? 'Reopen' : 'Resolve';
+    const pop = $('comment-pop');
+    pop.hidden = false;
+    const pw = 280, ph = pop.offsetHeight || 130;
+    pop.style.left = Math.max(8, Math.min(x, window.innerWidth - pw - 12)) + 'px';
+    pop.style.top = Math.min(y + 12, window.innerHeight - ph - 12) + 'px';
+  }
+  function closeCommentPop() { $('comment-pop').hidden = true; commentPopRef = null; }
+  function refreshCommentViews(path) {
+    fillComments(path); renderPins(path); render();
+    if (focusPath === path) renderFocusPins();
+  }
+  $('cp-resolve').addEventListener('click', async () => {
+    if (!commentPopRef) return;
+    const { path, i } = commentPopRef;
+    const c = nodes.get(path).cache.comments.comments[i];
+    c.status = c.status === 'resolved' ? 'open' : 'resolved';
+    await saveComments(path);
+    closeCommentPop(); refreshCommentViews(path);
+  });
+  $('cp-delete').addEventListener('click', async () => {
+    if (!commentPopRef) return;
+    const { path, i } = commentPopRef;
+    nodes.get(path).cache.comments.comments.splice(i, 1);
+    await saveComments(path);
+    closeCommentPop(); refreshCommentViews(path);
+  });
+  $('cp-close').addEventListener('click', closeCommentPop);
+  document.addEventListener('mousedown', (e) => {
+    if ($('comment-pop').hidden) return;
+    if (e.target.closest('#comment-pop') || e.target.closest('.pin')) return;
+    closeCommentPop();
+  });
 
   // --- persistence ----------------------------------------------------------
   const post = (url, body) => api(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -689,6 +731,7 @@
       pin.style.left = (r.left + r.width / 2) + 'px';
       pin.style.top = r.top + 'px';
       pin.title = c.text;
+      pin.addEventListener('click', (e) => { e.stopPropagation(); openCommentPop(focusPath, i, e.clientX, e.clientY); });
       layer.append(pin);
     });
   }

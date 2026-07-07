@@ -161,6 +161,17 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
 #focus-composer[hidden] { display: none; }
 #focus-composer textarea { width: 100%; font: inherit; font-size: 14px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; margin-top: 8px; resize: vertical; }
 
+/* comment popover (click a pin to read it) */
+#comment-pop { position: fixed; z-index: 70; width: 280px; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.22); padding: 14px; }
+#comment-pop[hidden] { display: none; }
+#cp-text { font-size: 14px; line-height: 1.4; color: var(--ink); white-space: pre-wrap; }
+#cp-meta { font-size: 11px; color: var(--muted); margin-top: 8px; font-family: ui-monospace, monospace; word-break: break-all; }
+.cp-actions { display: flex; gap: 6px; margin-top: 12px; }
+.cp-actions button { font: inherit; font-size: 12px; border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+#cp-resolve { border-color: var(--approved); color: var(--approved); font-weight: 600; }
+.cp-del { color: var(--danger, #dc2626); border-color: #f3c4c4; }
+#cp-close { margin-left: auto; }
+
 /* toast */
 #toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: #1b1f24; color: #fff; font-size: 13px; padding: 9px 16px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 100; }
 #toast.show { opacity: 1; }
