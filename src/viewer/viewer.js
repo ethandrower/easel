@@ -85,8 +85,13 @@
       const head = el('div', 'node-head');
       const dot = el('span', 'node-dot'); dot.style.background = statusColor(d.status);
       head.append(dot, el('span', 'node-title', d.title));
+      const right = el('div', 'node-head-right');
       const open = (n.cache.comments.comments || []).filter((c) => c.status !== 'resolved').length;
-      if (open) head.append(el('span', 'node-badge', open + '💬'));
+      if (open) right.append(el('span', 'node-badge', open + '💬'));
+      const expand = el('span', 'node-expand', '⛶'); expand.title = 'Open full screen';
+      expand.addEventListener('mousedown', (e) => { e.stopPropagation(); openFocus(path); });
+      right.append(expand);
+      head.append(right);
       node.append(head);
 
       const frame = el('div', 'node-frame');
@@ -104,7 +109,7 @@
       n.dom = node; n.frame = frame; n.iframe = null; n.mounted = false;
 
       head.addEventListener('mousedown', (e) => startNodeDrag(e, path));
-      head.addEventListener('dblclick', () => flyTo(path));
+      head.addEventListener('dblclick', () => openFocus(path));
     }
     if (selected && nodes.has(selected)) nodes.get(selected).dom.classList.add('selected');
     drawGroups();
@@ -606,6 +611,62 @@
     copy(`Resolve all ${total} open Easel canvas comments across design-canvas/modules/**. Follow the easel-resolve skill: for each open comment, edit that view's index.html at the pinned selector, then mark it resolved.`);
   });
 
+  // --- full-page focus mode -------------------------------------------------
+  let focusPath = null;
+  function openFocus(path) {
+    const n = nodes.get(path);
+    if (!n) return;
+    select(path);
+    focusPath = path;
+    $('focus-title').textContent = `${n.data.title}  ·  ${path}`;
+    $('focus-frame').src = n.data.url;
+    $('focus').hidden = false;
+  }
+  function closeFocus() { $('focus').hidden = true; $('focus-frame').src = 'about:blank'; focusPath = null; }
+  $('focus-close').addEventListener('click', closeFocus);
+  $('act-focus').addEventListener('click', () => { if (selected) openFocus(selected); });
+  $('focus-copy').addEventListener('click', () => {
+    if (!focusPath) return;
+    const openC = (nodes.get(focusPath).cache.comments.comments || []).filter((c) => c.status !== 'resolved');
+    if (!openC.length) { toast('No open comments on this view'); return; }
+    copy(`Resolve the ${openC.length} open Easel comment(s) on ${focusPath}. Follow the easel-resolve skill: edit design-canvas/modules/${focusPath}/index.html at each pinned selector, then mark them resolved.`);
+  });
+
+  // --- auto-arrange: layered layout following the edges ---------------------
+  function tidyLayout() {
+    const ids = [...nodes.keys()];
+    if (!ids.length) return;
+    const out = new Map(ids.map((id) => [id, []]));
+    const indeg = new Map(ids.map((id) => [id, 0]));
+    for (const [from, n] of nodes) for (const l of (n.cache.view.links || [])) if (nodes.has(l.to)) { out.get(from).push(l.to); indeg.set(l.to, indeg.get(l.to) + 1); }
+    const layer = new Map();
+    let roots = ids.filter((id) => indeg.get(id) === 0);
+    if (!roots.length) roots = [ids[0]];
+    const cap = ids.length;                          // cycle guard bound
+    const queue = roots.map((id) => [id, 0]);
+    while (queue.length) {
+      const [id, l] = queue.shift();
+      if (l > cap) continue;
+      if (layer.has(id) && layer.get(id) >= l) continue;
+      layer.set(id, l);
+      for (const to of out.get(id)) queue.push([to, l + 1]);
+    }
+    for (const id of ids) if (!layer.has(id)) layer.set(id, 0);
+    const byLayer = new Map();
+    for (const id of ids) { const l = layer.get(id); if (!byLayer.has(l)) byLayer.set(l, []); byLayer.get(l).push(id); }
+    const COLW = FRAME_W + GAP_X, ROWH = FRAME_H + HEAD_H + GAP_Y;
+    const changed = [];
+    for (const [l, list] of byLayer) {
+      list.sort((a, b) => (nodes.get(a).data._module.title + nodes.get(a).data.title).localeCompare(nodes.get(b).data._module.title + nodes.get(b).data.title));
+      list.forEach((id, i) => {
+        const pos = { x: 80 + l * COLW, y: 80 + i * ROWH };
+        const n = nodes.get(id); n.data.position = pos; n.cache.view.position = pos; changed.push(id);
+      });
+    }
+    Promise.all(changed.map((id) => saveView(id))).then(() => { render(); fit(); toast('Arranged'); });
+  }
+  $('arrange').addEventListener('click', tidyLayout);
+
   // --- rail actions: rename / duplicate / delete ---------------------------
   $('act-duplicate').addEventListener('click', async () => {
     if (!selected) return;
@@ -683,7 +744,7 @@
   document.addEventListener('keydown', (e) => {
     if (/input|textarea|select/i.test(e.target.tagName)) return;
     if (e.key === 'f') fit();
-    if (e.key === 'Escape') { $('insert-form').hidden = true; $('edge-pop').hidden = true; $('composer').hidden = true; }
+    if (e.key === 'Escape') { $('insert-form').hidden = true; $('edge-pop').hidden = true; $('composer').hidden = true; closeFocus(); }
     if (e.key === '=' || e.key === '+') { view.z = Math.min(2, view.z * 1.2); applyTransform(); }
     if (e.key === '-') { view.z = Math.max(0.05, view.z / 1.2); applyTransform(); }
   });

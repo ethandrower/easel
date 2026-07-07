@@ -19,6 +19,7 @@
       </div>
       <div class="tools">
         <button id="overview-toggle" title="All open comments">☰ comments <span id="overview-count"></span></button>
+        <button id="arrange" title="Auto-arrange the graph by its links">⤢ arrange</button>
         <button id="fit" title="Fit to view">◹ fit</button>
         <button id="zoom-out" title="Zoom out">–</button>
         <span id="zoom-label">100%</span>
@@ -60,6 +61,7 @@
             <span id="v-module" class="v-module"></span>
           </div>
           <div class="v-id"><code id="v-path"></code></div>
+          <button id="act-focus" class="focus-btn" title="Open this view full screen (or double-click it)">⛶ Open full screen</button>
           <div class="v-actions">
             <button id="act-rename" title="Rename the folder id">rename</button>
             <button id="act-duplicate" title="Duplicate this view">duplicate</button>
@@ -110,6 +112,17 @@
       <button id="edge-del" class="del">delete</button>
     </div>
     <div id="toast"></div>
+
+    <div id="focus" hidden>
+      <div class="focus-bar">
+        <span id="focus-title"></span>
+        <div class="focus-actions">
+          <button id="focus-copy" title="Copy a Claude prompt for this view's open comments">⧉ Copy Claude prompt</button>
+          <button id="focus-close" title="Back to canvas (Esc)">× close</button>
+        </div>
+      </div>
+      <div class="focus-body"><iframe id="focus-frame"></iframe></div>
+    </div>
   </div>
 
   <script src="viewer.js"></script>

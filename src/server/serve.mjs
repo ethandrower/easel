@@ -258,7 +258,18 @@ export function startServer({ canvasRoot, viewerRoot, port = 4321 }) {
       // (the viewer sends the current viewport center) or a default.
       const parentDir = parent ? safeJoin(path.join(canvasRoot, 'modules'), parent) : null;
       let pv = parentDir ? await readJSON(path.join(parentDir, 'view.json'), null) : null;
-      const pos = pv && pv.position ? { x: pv.position.x, y: pv.position.y + 900 } : (position || { x: 80, y: 80 });
+      let pos = pv && pv.position ? { x: pv.position.x, y: pv.position.y + 900 } : (position || { x: 80, y: 80 });
+      // never drop a new view on top of an existing one — nudge down until clear
+      const taken = [];
+      for (const { dir: vd } of await allViewDirs(canvasRoot)) {
+        const vj = await readJSON(path.join(vd, 'view.json'), null);
+        if (vj && vj.position) taken.push(vj.position);
+      }
+      const NODE_W = 1200, NODE_H = 820, STEP = NODE_H + 180;
+      let guard = 0;
+      while (guard++ < 400 && taken.some((t) => Math.abs(t.x - pos.x) < NODE_W && Math.abs(t.y - pos.y) < NODE_H)) {
+        pos = { x: pos.x, y: pos.y + STEP };
+      }
       await writeJSON(path.join(viewDir, 'view.json'), { title, status: 'idea', position: pos, links: [] });
       await writeJSON(path.join(viewDir, 'comments.json'), { comments: [] });
       if (pv) {
