@@ -980,15 +980,55 @@
     const module = $('insert-module').value.trim();
     const title = $('insert-title').value.trim();
     const parent = $('insert-parent').value.trim();
+    const desc = $('insert-desc').value.trim();
     if (!module || !title) { toast('Module and title required'); return; }
     // drop a parentless view where the user is currently looking (viewport center)
     const r = canvas.getBoundingClientRect();
     const position = { x: (r.width / 2 - view.x) / view.z - FRAME_W / 2, y: (r.height / 2 - view.y) / view.z - (HEAD_H + FRAME_H) / 2 };
     const res = await post('/api/insert', { module, title, parent: parent || null, position });
     $('insert-form').hidden = true;
-    $('insert-module').value = ''; $('insert-title').value = ''; $('insert-parent').value = '';
-    if (res.ok) { await reloadTree(); if (nodes.has(res.path)) flyTo(res.path); toast('View created'); }
-    else toast(res.error || 'Create failed');
+    $('insert-module').value = ''; $('insert-title').value = ''; $('insert-parent').value = ''; $('insert-desc').value = '';
+    if (res.ok) {
+      await reloadTree();
+      if (nodes.has(res.path)) flyTo(res.path);
+      if (desc && nodes.has(res.path)) { copy(designPrompt(res.path, desc)); toast('View created — design prompt copied, paste into Claude Code'); }
+      else toast('View created');
+    } else toast(res.error || 'Create failed');
+  });
+
+  // --- design a view: emit a rich Claude prompt from a short description ----
+  function designPrompt(path, description) {
+    const n = nodes.get(path);
+    const links = (n.cache.view.links || []).map((l) => l.to);
+    const sibs = [...nodes.keys()].filter((p) => p !== path && nodes.get(p).data._module.id === n.data._module.id).map((p) => nodes.get(p).data.title);
+    const lines = [
+      `Design the "${n.data.title}" screen for the "${n.data._module.title}" module.`,
+      `File to write: design-canvas/modules/${path}/index.html — a complete, standalone HTML page.`,
+      '',
+      `What it should be: ${description || '(describe the screen)'}`,
+      '',
+      'Requirements:',
+      '- Keep <script src="../../../shared/ds.js"></script> in <head> (it provides the shared design system).',
+      '- Build with the shared classes: .page (wrapper), .card, .btn (+ .secondary/.danger/.ghost), .badge (+ .gray/.blue/.green/.amber/.red), .field (label+input), table, .row/.between/.muted. Do not invent a parallel style system.',
+      '- Give buttons and links stable ids so they can be wired to other screens.',
+      '- Make it look like a real, polished product screen — realistic copy and sensible layout.',
+    ];
+    if (links.length) lines.push(`- It already links to: ${links.join(', ')} (wire buttons with data-easel-nav if relevant).`);
+    if (sibs.length) lines.push(`- Sibling screens in this module (match their visual language): ${sibs.join(', ')}.`);
+    return lines.join('\n');
+  }
+  $('act-design').addEventListener('click', () => {
+    if (!selected) return;
+    $('design-title').textContent = nodes.get(selected).data.title;
+    $('design-desc').value = '';
+    $('design-panel').hidden = false;
+    $('design-desc').focus();
+  });
+  $('design-cancel').addEventListener('click', () => { $('design-panel').hidden = true; });
+  $('design-copy').addEventListener('click', () => {
+    if (!selected) return;
+    copy(designPrompt(selected, $('design-desc').value.trim()));
+    $('design-panel').hidden = true;
   });
 
   // --- keyboard shortcuts ---------------------------------------------------
@@ -998,7 +1038,7 @@
     if (e.key === 'v' || e.key === 'V') setTool('pointer');
     if (e.key === 'c' || e.key === 'C') setTool('comment');
     if (e.key === 'l' || e.key === 'L') setTool('link');
-    if (e.key === 'Escape') { $('insert-form').hidden = true; $('edge-pop').hidden = true; $('composer').hidden = true; $('drop').hidden = true; closeFocus(); setTool('pointer'); }
+    if (e.key === 'Escape') { $('insert-form').hidden = true; $('design-panel').hidden = true; $('edge-pop').hidden = true; $('composer').hidden = true; $('drop').hidden = true; closeFocus(); setTool('pointer'); }
     if (e.key === '=' || e.key === '+') { view.z = Math.min(2, view.z * 1.2); applyTransform(); }
     if (e.key === '-') { view.z = Math.max(0.05, view.z / 1.2); applyTransform(); }
   });

@@ -67,6 +67,7 @@
           </div>
           <div class="v-id"><code id="v-path"></code></div>
           <button id="act-focus" class="focus-btn" title="Open this view full screen (or double-click it)">⛶ Open full screen</button>
+          <button id="act-design" class="design-btn" title="Copy a Claude prompt to design or redesign this view">✨ Design this view</button>
           <div class="v-actions">
             <button id="act-rename" title="Rename the folder id">rename</button>
             <button id="act-duplicate" title="Duplicate this view">duplicate</button>
@@ -106,9 +107,20 @@
       <label>Module <input id="insert-module" placeholder="tasks" /></label>
       <label>Title <input id="insert-title" placeholder="Task Filters" /></label>
       <label>Link from (optional) <input id="insert-parent" placeholder="tasks/task-list" /></label>
+      <label>What is this screen? (optional) <textarea id="insert-desc" rows="2" placeholder="e.g. a settings page with account, notifications and billing sections"></textarea></label>
       <div class="insert-actions">
         <button id="insert-cancel">Cancel</button>
         <button id="insert-create" class="primary">Create</button>
+      </div>
+      <p class="insert-hint">If you describe it, a Claude design prompt is copied on create — paste it into Claude Code.</p>
+    </div>
+
+    <div id="design-panel" hidden>
+      <h3>Design “<span id="design-title"></span>”</h3>
+      <textarea id="design-desc" rows="3" placeholder="Describe the screen you want…"></textarea>
+      <div class="insert-actions">
+        <button id="design-cancel">Cancel</button>
+        <button id="design-copy" class="primary">⧉ Copy design prompt</button>
       </div>
     </div>
     <div id="edge-pop" hidden>

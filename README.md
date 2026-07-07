@@ -23,6 +23,7 @@ Then:
 
 - **Graph canvas** — pan/zoom infinite canvas of live prototype iframes, with edges you draw between views. Zoom out for the bird's-eye, zoom in to click through a real prototype.
 - **Authoring** — insert / duplicate / rename / delete views right on the canvas; drag from a view's handle to another to link them; click an edge to label or delete it.
+- **Create → design fast** — describe a screen when you insert it (or hit ✨ Design this view) and Easel copies a rich, paste-ready Claude prompt (file path + your description + the ds.js class palette + the view's links + sibling screens). Paste into Claude Code, and the blank view becomes a real design that live-reloads onto the canvas.
 - **Full-page focus mode** — double-click a view (or the ⛶ button) to open it full-screen and interact with it like a real page. Comment right there, on the actual design.
 - **Element-pinned comments** — click an element to pin a comment; it captures rich context (CSS selector, tag, current markup, on-screen box). Resolve inline; a cross-canvas **comment overview** lists everything still open.
 - **Wire real navigation (link mode)** — pick the Link tool, click an element, choose a target view. Easel writes a *real* link into the HTML: the prototype actually navigates when opened standalone, while on the canvas the click "flies" to the target node (so the map stays coherent) and in focus mode it follows through. Any `<a href>`/nav you (or Claude) write by hand is also auto-derived into edges.
