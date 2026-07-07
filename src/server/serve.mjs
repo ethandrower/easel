@@ -145,13 +145,43 @@ export function startServer({ canvasRoot, viewerRoot, port = 4321 }) {
     for (const res of sseClients) res.write(payload);
   };
   let debounce;
+  const onChange = (file) => {
+    if (!file || String(file).includes('.git')) return;
+    clearTimeout(debounce);
+    debounce = setTimeout(() => broadcast(String(file).replace(/\\/g, '/')), 60);
+  };
+  // Recursive fs.watch works on macOS/Windows; on Linux it throws — fall back to mtime polling.
   try {
-    fss.watch(canvasRoot, { recursive: true }, (_evt, file) => {
-      if (!file || String(file).includes('.git')) return;
-      clearTimeout(debounce);
-      debounce = setTimeout(() => broadcast(String(file).replace(/\\/g, '/')), 60);
-    });
-  } catch { /* recursive watch unsupported on some platforms; live reload simply off */ }
+    fss.watch(canvasRoot, { recursive: true }, (_evt, file) => onChange(file));
+  } catch {
+    const mtimes = new Map();
+    let primed = false;
+    const scan = async () => {
+      const seen = new Set();
+      const stack = [canvasRoot];
+      while (stack.length) {
+        const dir = stack.pop();
+        let entries;
+        try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { continue; }
+        for (const e of entries) {
+          if (e.name === '.git' || e.name === 'node_modules') continue;
+          const full = path.join(dir, e.name);
+          if (e.isDirectory()) { stack.push(full); continue; }
+          try {
+            const s = await fs.stat(full);
+            seen.add(full);
+            const prev = mtimes.get(full);
+            mtimes.set(full, s.mtimeMs);
+            if (primed && prev !== s.mtimeMs) onChange(e.name);
+          } catch { /* file vanished mid-scan */ }
+        }
+      }
+      for (const k of [...mtimes.keys()]) if (!seen.has(k)) { mtimes.delete(k); if (primed) onChange('deleted'); }
+      primed = true;
+    };
+    scan();
+    setInterval(scan, 800);
+  }
 
   const safeJoin = (root, rel) => {
     const p = path.join(root, rel);
@@ -224,11 +254,11 @@ export function startServer({ canvasRoot, viewerRoot, port = 4321 }) {
       let tpl = await fs.readFile(path.join(canvasRoot, '_template.html'), 'utf8').catch(() => '<!doctype html><html><head><script src="../../../shared/ds.js"></script></head><body><main class="p-6"><h1>__TITLE__</h1></main></body></html>');
       tpl = tpl.replace(/__TITLE__/g, title);
       await fs.writeFile(path.join(viewDir, 'index.html'), tpl);
-      // place the new node below its parent (if any), else at the given/default spot
-      let pos = position;
+      // place below the parent (if any); otherwise at the client-supplied spot
+      // (the viewer sends the current viewport center) or a default.
       const parentDir = parent ? safeJoin(path.join(canvasRoot, 'modules'), parent) : null;
       let pv = parentDir ? await readJSON(path.join(parentDir, 'view.json'), null) : null;
-      if (!pos) pos = pv && pv.position ? { x: pv.position.x, y: pv.position.y + 900 } : { x: 80, y: 80 };
+      const pos = pv && pv.position ? { x: pv.position.x, y: pv.position.y + 900 } : (position || { x: 80, y: 80 });
       await writeJSON(path.join(viewDir, 'view.json'), { title, status: 'idea', position: pos, links: [] });
       await writeJSON(path.join(viewDir, 'comments.json'), { comments: [] });
       if (pv) {

@@ -19,6 +19,15 @@ Then:
 3. **Annotate** — pin a comment to any element on a screen.
 4. **Edit via Claude** — in Claude Code: *"resolve the open canvas comments."* It reads your pins, edits the HTML at each pinned element, and marks them resolved. The canvas live-reloads.
 
+## Features
+
+- **Graph canvas** — pan/zoom infinite canvas of live prototype iframes, with edges you draw between views. Zoom out for the bird's-eye, zoom in to click through a real prototype.
+- **Authoring** — insert / duplicate / rename / delete views right on the canvas; drag from a view's handle to another to link them; click an edge to label or delete it.
+- **Element-pinned comments** — click an element on a screen to pin a comment to its CSS selector; resolve inline. A cross-canvas **comment overview** lists everything still open.
+- **Status workflow** — every view is `idea → in-progress → in-review → approved`, color-coded, with toolbar filters to dim what you're not working on.
+- **Organized at scale** — module group backdrops, a minimap, `jump to view` search, and **iframe virtualization** (only screens near the viewport stay live; far zoom-out is all lightweight placeholders) so hundreds of screens stay smooth.
+- **Claude loop** — a **Copy Claude prompt** button (per view or for everything open) plus the shipped `easel-resolve` skill: annotate, then let Claude Code apply the changes and mark them resolved. Live-reload shows the result instantly.
+
 ## How it works
 
 The **filesystem is the source of truth** — no database, no central manifest:

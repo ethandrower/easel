@@ -2,25 +2,31 @@
 
 Open-core. The golden rule: **never cripple local.** Single-player is complete and free; the paid product is the collaboration + hosting layer that a team can't trivially self-host.
 
-## v1 — OSS local loop (this repo)
+## v1 — OSS local loop (this repo) — DONE
 
 - [x] Filesystem-as-source-of-truth model (modules/views/edges/status/comments)
 - [x] Zero-dependency dev server: static + live-reload + tree/view/comments/insert API
 - [x] Vanilla pan/zoom graph canvas with live prototype iframes + edges
 - [x] Lean contextual rail: related links + element-pinned comments
 - [x] `easel init` scaffolding + Claude Code glue (skill + command + CLAUDE.md)
-- [ ] Verify the end-to-end loop on a real project (dogfood on citemed)
-- [ ] Delete-view / rename-view flows; broken-edge warnings in the UI
-- [ ] Draw edges by dragging between nodes (instead of editing view.json)
+- [x] Insert / duplicate / rename / delete views on the canvas
+- [x] Draw edges by dragging between nodes; click an edge to label/delete
+- [x] Inline comment composer (no blocking dialogs) + Copy Claude prompt
+- [x] Status filter, module group backdrops, minimap, cross-canvas comment overview
+- [x] Iframe virtualization (live near viewport, placeholders far out) for scale
+- [x] Cross-platform live-reload (recursive watch + mtime-poll fallback for Linux)
+- [x] Server API test suite (`npm test`)
+- [x] Browser-verified end-to-end
 
-## v2 — OSS polish
+## v2 — OSS polish (next)
 
 - [ ] Variant/state stacks per view (modal open, empty, error) as child nodes
-- [ ] Minimap + status filter/kanban view toggle
-- [ ] Canvas virtualization (screenshot placeholders → hydrate on zoom) for 100+ screens
-- [ ] Real click-through edges (a prototype button actually navigates to the linked view)
+- [ ] Module management in-UI (create/rename/recolor/reorder; delete module)
+- [ ] Broken-edge warnings + a kanban (by-status) view toggle
+- [ ] Real click-through edges (a prototype button navigates to the linked view)
 - [ ] Export (static bundle / PDF of a board)
 - [ ] Optional `ds.js` auto-detection for common setups (Tailwind, CSS vars)
+- [ ] Group backdrops handle spatially-interleaved modules gracefully
 
 ## Cloud — hosted collaboration (separate, closed, paid SaaS)
 

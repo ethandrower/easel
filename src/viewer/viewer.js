@@ -34,6 +34,7 @@
     surface.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.z})`;
     $('zoom-label').textContent = Math.round(view.z * 100) + '%';
     drawMinimapViewport();
+    updateViewports();
   }
   const screenToWorld = (sx, sy) => ({ x: (sx - view.x) / view.z, y: (sy - view.y) / view.z });
   const canvasPoint = (e) => { const r = canvas.getBoundingClientRect(); return screenToWorld(e.clientX - r.left, e.clientY - r.top); };
@@ -89,10 +90,9 @@
       node.append(head);
 
       const frame = el('div', 'node-frame');
-      const iframe = document.createElement('iframe');
-      iframe.src = d.url;
-      iframe.addEventListener('load', () => renderPins(path));
-      frame.append(iframe);
+      const ph = el('div', 'placeholder');
+      ph.append(el('div', 'ph-title', d.title));
+      frame.append(ph);
       node.append(frame);
 
       const handle = el('div', 'link-handle', '↗');
@@ -101,7 +101,7 @@
       node.append(handle);
 
       nodesLayer.append(node);
-      n.dom = node; n.iframe = iframe;
+      n.dom = node; n.frame = frame; n.iframe = null; n.mounted = false;
 
       head.addEventListener('mousedown', (e) => startNodeDrag(e, path));
       head.addEventListener('dblclick', () => flyTo(path));
@@ -112,7 +112,36 @@
     applyFilter();
     drawMinimap();
     updateOverviewCount();
-    applyTransform();
+    applyTransform();   // also runs updateViewports()
+  }
+
+  // --- iframe virtualization: only mount prototypes near the viewport --------
+  function mountIframe(n) {
+    if (n.mounted) return;
+    const iframe = document.createElement('iframe');
+    iframe.src = n.data.url;
+    iframe.addEventListener('load', () => renderPins(n.data.id));
+    n.frame.append(iframe);
+    n.iframe = iframe; n.mounted = true;
+  }
+  function unmountIframe(n) {
+    if (!n.mounted) return;
+    if (n.iframe) n.iframe.remove();
+    n.iframe = null; n.mounted = false;
+    n.dom.querySelectorAll('.pin').forEach((p) => p.remove());
+  }
+  function updateViewports() {
+    const r = canvas.getBoundingClientRect();
+    const farOverview = view.z < 0.15;              // bird's-eye stays cheap: placeholders only
+    const margin = Math.max(r.width, r.height) * 0.6;
+    for (const [, n] of nodes) {
+      if (!n.dom) continue;
+      const d = n.data.position;
+      const left = view.x + d.x * view.z, top = view.y + d.y * view.z;
+      const w = FRAME_W * view.z, h = (HEAD_H + FRAME_H) * view.z;
+      const visible = !farOverview && left < r.width + margin && left + w > -margin && top < r.height + margin && top + h > -margin;
+      if (visible || n.data.id === selected) mountIframe(n); else unmountIframe(n);
+    }
   }
 
   const centerR = (n) => ({ x: n.data.position.x + FRAME_W, y: n.data.position.y + (HEAD_H + FRAME_H) / 2 });
@@ -269,7 +298,7 @@
 
   function renderPins(path) {
     const n = nodes.get(path);
-    if (!n || !n.dom) return;
+    if (!n || !n.dom || !n.iframe) return;
     n.dom.querySelectorAll('.pin').forEach((p) => p.remove());
     let doc;
     try { doc = n.iframe.contentDocument; } catch { return; }
@@ -298,6 +327,7 @@
     selected = path; deleteArmed = false;
     for (const [p, n] of nodes) n.dom && n.dom.classList.toggle('selected', p === path);
     const n = nodes.get(path);
+    mountIframe(n);   // selected view is always live (needed for pinning/highlight)
     $('rail').classList.remove('empty');
     $('rail-body').hidden = false;
     $('rail-empty').style.display = 'none';
@@ -639,7 +669,10 @@
     const title = $('insert-title').value.trim();
     const parent = $('insert-parent').value.trim();
     if (!module || !title) { toast('Module and title required'); return; }
-    const res = await post('/api/insert', { module, title, parent: parent || null });
+    // drop a parentless view where the user is currently looking (viewport center)
+    const r = canvas.getBoundingClientRect();
+    const position = { x: (r.width / 2 - view.x) / view.z - FRAME_W / 2, y: (r.height / 2 - view.y) / view.z - (HEAD_H + FRAME_H) / 2 };
+    const res = await post('/api/insert', { module, title, parent: parent || null, position });
     $('insert-form').hidden = true;
     $('insert-module').value = ''; $('insert-title').value = ''; $('insert-parent').value = '';
     if (res.ok) { await reloadTree(); if (nodes.has(res.path)) flyTo(res.path); toast('View created'); }
