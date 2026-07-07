@@ -23,10 +23,11 @@ Then:
 
 - **Graph canvas** — pan/zoom infinite canvas of live prototype iframes, with edges you draw between views. Zoom out for the bird's-eye, zoom in to click through a real prototype.
 - **Authoring** — insert / duplicate / rename / delete views right on the canvas; drag from a view's handle to another to link them; click an edge to label or delete it.
-- **Element-pinned comments** — click an element on a screen to pin a comment to its CSS selector; resolve inline. A cross-canvas **comment overview** lists everything still open.
+- **Full-page focus mode** — double-click a view (or the ⛶ button) to open it full-screen and interact with it like a real page. Comment right there, on the actual design.
+- **Element-pinned comments** — click an element to pin a comment; it captures rich context (CSS selector, tag, current markup, on-screen box). Resolve inline; a cross-canvas **comment overview** lists everything still open.
 - **Status workflow** — every view is `idea → in-progress → in-review → approved`, color-coded, with toolbar filters to dim what you're not working on.
-- **Organized at scale** — module group backdrops, a minimap, `jump to view` search, and **iframe virtualization** (only screens near the viewport stay live; far zoom-out is all lightweight placeholders) so hundreds of screens stay smooth.
-- **Claude loop** — a **Copy Claude prompt** button (per view or for everything open) plus the shipped `easel-resolve` skill: annotate, then let Claude Code apply the changes and mark them resolved. Live-reload shows the result instantly.
+- **Organized at scale** — `⤢ arrange` auto-lays-out the graph by its edges, plus module group backdrops, a minimap, `jump to view` search, and **iframe virtualization** so hundreds of screens stay smooth.
+- **Claude loop** — a **Copy Claude prompt** button (per view or everything open) emits a precise, context-rich instruction (each comment with its selector + markup + location), which the shipped `easel-resolve` skill applies and marks resolved. Live-reload shows the result instantly.
 
 ## How it works
 

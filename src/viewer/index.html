@@ -117,11 +117,24 @@
       <div class="focus-bar">
         <span id="focus-title"></span>
         <div class="focus-actions">
+          <button id="focus-comment" title="Pin a comment to an element">💬 Comment</button>
           <button id="focus-copy" title="Copy a Claude prompt for this view's open comments">⧉ Copy Claude prompt</button>
           <button id="focus-close" title="Back to canvas (Esc)">× close</button>
         </div>
       </div>
-      <div class="focus-body"><iframe id="focus-frame"></iframe></div>
+      <div class="focus-body">
+        <iframe id="focus-frame"></iframe>
+        <div id="focus-pins"></div>
+        <div id="focus-hint" hidden>Click an element in the design to pin your comment…</div>
+      </div>
+      <div id="focus-composer" hidden>
+        <div class="composer-sel"><code id="focus-composer-sel"></code></div>
+        <textarea id="focus-composer-text" rows="3" placeholder="Describe the change…"></textarea>
+        <div class="composer-actions">
+          <button id="focus-composer-cancel">Cancel</button>
+          <button id="focus-composer-save" class="primary">Add comment</button>
+        </div>
+      </div>
     </div>
   </div>
 

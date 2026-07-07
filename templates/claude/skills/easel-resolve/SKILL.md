@@ -8,9 +8,15 @@ description: Resolve open comments left on Easel design-canvas prototypes. Trigg
 Easel prototypes live under `design-canvas/modules/<module>/<view>/`. Each view folder has:
 - `index.html` — the standalone prototype (styled via `../../../shared/ds.js`)
 - `view.json` — `{ title, status, position, links }`
-- `comments.json` — `{ "comments": [ { id, selector, text, status } ] }`
+- `comments.json` — `{ "comments": [ { id, text, status, selector, tag, elementText, snippet, rect } ] }`
 
-A comment with `"status": "open"` is a unit of design feedback pinned to the element matched by its CSS `selector`. **Open comments are your work queue.**
+A comment with `"status": "open"` is a unit of design feedback pinned to an element. Each open comment carries rich context to help you act precisely:
+- `selector` — the CSS selector of the pinned element (your primary edit target)
+- `tag` / `elementText` — the element's tag and its text, to disambiguate
+- `snippet` — the element's markup at capture time
+- `rect` — its on-screen box `{x,y,w,h}` (design location, not something to edit)
+
+**Open comments are your work queue.**
 
 ## Procedure
 

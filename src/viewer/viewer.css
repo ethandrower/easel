@@ -151,8 +151,15 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
 .focus-actions { display: flex; gap: 8px; }
 .focus-actions button { font: inherit; font-size: 13px; border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
 #focus-close { font-weight: 600; }
-.focus-body { flex: 1; overflow: auto; background: #fff; }
+.focus-body { position: relative; flex: 1; overflow: hidden; background: #fff; }
 #focus-frame { width: 100%; height: 100%; border: 0; display: block; }
+#focus.commenting #focus-frame { cursor: crosshair; }
+#focus-pins { position: absolute; inset: 0; pointer-events: none; }
+#focus-pins .pin { pointer-events: auto; }
+#focus-hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: var(--accent); color: #fff; font-size: 13px; padding: 7px 14px; border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,.2); }
+#focus-composer { position: fixed; right: 24px; bottom: 24px; width: 340px; background: #fff; border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.25); padding: 14px; z-index: 45; }
+#focus-composer[hidden] { display: none; }
+#focus-composer textarea { width: 100%; font: inherit; font-size: 14px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; margin-top: 8px; resize: vertical; }
 
 /* toast */
 #toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: #1b1f24; color: #fff; font-size: 13px; padding: 9px 16px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 100; }

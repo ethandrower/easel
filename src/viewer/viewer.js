@@ -540,8 +540,23 @@
     drawEdges(); if (selected === fromPath) fillLinks(fromPath);
   });
 
+  // Capture everything Claude Code needs to act on a pinned element: a robust
+  // selector, the tag, the element's current markup, its text, and its on-screen box.
+  function captureContext(elm) {
+    let snippet = '', rect = null;
+    try { snippet = elm.outerHTML.replace(/\s+/g, ' ').trim().slice(0, 300); } catch { /* */ }
+    try { const r = elm.getBoundingClientRect(); rect = { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; } catch { /* */ }
+    return {
+      selector: cssPath(elm),
+      tag: elm.tagName ? elm.tagName.toLowerCase() : '',
+      elementText: (elm.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+      snippet,
+      rect,
+    };
+  }
+
   // --- comments: inline composer (no blocking prompts) ----------------------
-  let pendingSelector = null;
+  let pendingContext = null;
   $('add-comment').addEventListener('click', () => {
     if (!selected) return;
     $('pin-hint').hidden = false;
@@ -557,23 +572,23 @@
       doc.removeEventListener('click', onClick, true);
       n.dom.classList.remove('pinning');
       $('pin-hint').hidden = true;
-      pendingSelector = cssPath(e.target);
-      $('composer-selector').textContent = pendingSelector;
+      pendingContext = captureContext(e.target);
+      $('composer-selector').textContent = pendingContext.selector;
       $('composer-text').value = '';
       $('composer').hidden = false;
       $('composer-text').focus();
     };
     doc.addEventListener('click', onClick, true);
   }
-  $('composer-cancel').addEventListener('click', () => { $('composer').hidden = true; pendingSelector = null; });
+  $('composer-cancel').addEventListener('click', () => { $('composer').hidden = true; pendingContext = null; });
   $('composer-save').addEventListener('click', async () => {
     const text = $('composer-text').value.trim();
     if (!text || !selected) { $('composer').hidden = true; return; }
     const n = nodes.get(selected);
     n.cache.comments.comments = n.cache.comments.comments || [];
-    n.cache.comments.comments.push({ id: 'c' + Date.now(), selector: pendingSelector, text, status: 'open' });
+    n.cache.comments.comments.push({ id: 'c' + Date.now(), text, status: 'open', ...pendingContext });
     await saveComments(selected);
-    $('composer').hidden = true; pendingSelector = null;
+    $('composer').hidden = true; pendingContext = null;
     fillComments(selected); renderPins(selected); render();
   });
 
@@ -597,39 +612,120 @@
   }
 
   // --- copy Claude prompts --------------------------------------------------
+  // Build a rich, paste-ready Claude Code prompt from open comments + their context.
+  function commentBlock(path, c, i) {
+    let s = `${i}. [${path}] ${JSON.stringify(c.text)}`;
+    if (c.selector) s += `\n   • target selector: ${c.selector}`;
+    if (c.tag) s += `\n   • element: <${c.tag}>` + (c.elementText ? ` text=${JSON.stringify(c.elementText)}` : '');
+    if (c.snippet) s += `\n   • current markup: ${c.snippet}`;
+    if (c.rect) s += `\n   • on-screen box: x=${c.rect.x} y=${c.rect.y} ${c.rect.w}×${c.rect.h}px`;
+    return s;
+  }
+  function buildPrompt(paths) {
+    const blocks = []; let i = 1;
+    for (const p of paths) {
+      if (!nodes.has(p)) continue;
+      for (const c of (nodes.get(p).cache.comments.comments || [])) {
+        if (c.status === 'resolved') continue;
+        blocks.push(commentBlock(p, c, i++));
+      }
+    }
+    if (!blocks.length) return null;
+    return `Resolve these ${blocks.length} open Easel design comment(s). For each: open the referenced view's index.html under design-canvas/modules/<path>/, edit the element at the target selector to satisfy the comment (use the shared classes in design-canvas/shared/ds.js), then set that comment's "status" to "resolved" in the same folder's comments.json.\n\n${blocks.join('\n\n')}`;
+  }
   $('copy-prompt').addEventListener('click', () => {
     if (!selected) return;
-    const n = nodes.get(selected);
-    const open = (n.cache.comments.comments || []).filter((c) => c.status !== 'resolved');
-    if (!open.length) { toast('No open comments on this view'); return; }
-    copy(`Resolve the ${open.length} open Easel comment(s) on ${selected}. Follow the easel-resolve skill: edit design-canvas/modules/${selected}/index.html at each pinned selector to satisfy the comment text, then mark them resolved in comments.json.`);
+    const p = buildPrompt([selected]);
+    if (!p) { toast('No open comments on this view'); return; }
+    copy(p);
   });
   $('copy-all').addEventListener('click', () => {
-    let total = 0;
-    for (const [, n] of nodes) total += (n.cache.comments.comments || []).filter((c) => c.status !== 'resolved').length;
-    if (!total) { toast('No open comments anywhere'); return; }
-    copy(`Resolve all ${total} open Easel canvas comments across design-canvas/modules/**. Follow the easel-resolve skill: for each open comment, edit that view's index.html at the pinned selector, then mark it resolved.`);
+    const p = buildPrompt([...nodes.keys()]);
+    if (!p) { toast('No open comments anywhere'); return; }
+    copy(p);
   });
 
-  // --- full-page focus mode -------------------------------------------------
+  // --- full-page focus mode (view + contextual commenting) ------------------
   let focusPath = null;
+  let focusPending = null;
   function openFocus(path) {
     const n = nodes.get(path);
     if (!n) return;
     select(path);
     focusPath = path;
     $('focus-title').textContent = `${n.data.title}  ·  ${path}`;
-    $('focus-frame').src = n.data.url;
+    $('focus-composer').hidden = true; $('focus-hint').hidden = true;
+    $('focus').classList.remove('commenting');
+    const fr = $('focus-frame');
+    fr.onload = () => {
+      renderFocusPins();
+      try { fr.contentWindow.addEventListener('scroll', renderFocusPins, { passive: true }); } catch { /* */ }
+    };
+    fr.src = n.data.url;
     $('focus').hidden = false;
   }
-  function closeFocus() { $('focus').hidden = true; $('focus-frame').src = 'about:blank'; focusPath = null; }
+  function closeFocus() { $('focus').hidden = true; $('focus-frame').src = 'about:blank'; $('focus-pins').innerHTML = ''; focusPath = null; }
   $('focus-close').addEventListener('click', closeFocus);
   $('act-focus').addEventListener('click', () => { if (selected) openFocus(selected); });
   $('focus-copy').addEventListener('click', () => {
     if (!focusPath) return;
-    const openC = (nodes.get(focusPath).cache.comments.comments || []).filter((c) => c.status !== 'resolved');
-    if (!openC.length) { toast('No open comments on this view'); return; }
-    copy(`Resolve the ${openC.length} open Easel comment(s) on ${focusPath}. Follow the easel-resolve skill: edit design-canvas/modules/${focusPath}/index.html at each pinned selector, then mark them resolved.`);
+    const p = buildPrompt([focusPath]);
+    if (!p) { toast('No open comments on this view'); return; }
+    copy(p);
+  });
+
+  function renderFocusPins() {
+    const layer = $('focus-pins');
+    layer.innerHTML = '';
+    if (!focusPath) return;
+    let doc;
+    try { doc = $('focus-frame').contentDocument; } catch { return; }
+    if (!doc) return;
+    (nodes.get(focusPath).cache.comments.comments || []).forEach((c, i) => {
+      let target; try { target = c.selector && doc.querySelector(c.selector); } catch { target = null; }
+      if (!target) return;
+      const r = target.getBoundingClientRect();
+      const pin = el('div', 'pin' + (c.status === 'resolved' ? ' resolved' : ''), String(i + 1));
+      pin.style.left = (r.left + r.width / 2) + 'px';
+      pin.style.top = r.top + 'px';
+      pin.title = c.text;
+      layer.append(pin);
+    });
+  }
+
+  $('focus-comment').addEventListener('click', () => {
+    if (!focusPath) return;
+    $('focus-hint').hidden = false;
+    $('focus').classList.add('commenting');
+    armFocusCapture();
+  });
+  function armFocusCapture() {
+    let doc;
+    try { doc = $('focus-frame').contentDocument; } catch { return; }
+    const onClick = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      doc.removeEventListener('click', onClick, true);
+      $('focus-hint').hidden = true;
+      $('focus').classList.remove('commenting');
+      focusPending = captureContext(e.target);
+      $('focus-composer-sel').textContent = focusPending.selector;
+      $('focus-composer-text').value = '';
+      $('focus-composer').hidden = false;
+      $('focus-composer-text').focus();
+    };
+    doc.addEventListener('click', onClick, true);
+  }
+  $('focus-composer-cancel').addEventListener('click', () => { $('focus-composer').hidden = true; focusPending = null; });
+  $('focus-composer-save').addEventListener('click', async () => {
+    const text = $('focus-composer-text').value.trim();
+    if (!text || !focusPath) { $('focus-composer').hidden = true; return; }
+    const n = nodes.get(focusPath);
+    n.cache.comments.comments = n.cache.comments.comments || [];
+    n.cache.comments.comments.push({ id: 'c' + Date.now(), text, status: 'open', ...focusPending });
+    await saveComments(focusPath);
+    $('focus-composer').hidden = true; focusPending = null;
+    renderFocusPins();
+    renderPins(focusPath); fillComments(focusPath); render();
   });
 
   // --- auto-arrange: layered layout following the edges ---------------------
