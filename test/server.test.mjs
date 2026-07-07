@@ -78,6 +78,28 @@ test('comments persist to the view sidecar', async () => {
   assert.equal(v.comments.comments[0].text, 'hi');
 });
 
+test('wire writes real navigation and records a wired edge', async () => {
+  const before = '<button class="btn" id="new-task">+ New task</button>';
+  const after = '<button class="btn" id="new-task" data-easel-nav="../task-detail/index.html" data-easel-view="tasks/task-detail">+ New task</button>';
+  const r = await post('/api/wire', { path: 'tasks/task-list', selector: '#new-task', to: 'tasks/task-detail', label: '+ New task', before, after });
+  assert.ok(r.ok);
+  assert.ok(r.wired);
+  const html = fss.readFileSync(path.join(canvasRoot, 'modules/tasks/task-list/index.html'), 'utf8');
+  assert.ok(html.includes('data-easel-view="tasks/task-detail"'));
+  const tree = await get('/api/tree');
+  const tl = tree.modules[0].views.find((v) => v.id === 'tasks/task-list');
+  assert.ok(tl.derivedLinks.some((l) => l.to === 'tasks/task-detail'));
+  const view = await get('/api/view?path=tasks/task-list');
+  assert.ok(view.view.links.some((l) => l.to === 'tasks/task-detail' && l.wired));
+});
+
+test('wire falls back to id-injection when no before/after given', async () => {
+  const r = await post('/api/wire', { path: 'tasks/task-detail', selector: '#save-btn', to: 'tasks/new-task' });
+  // task-detail's Save button has no id, so this should record the edge but not wire
+  assert.ok(r.ok);
+  assert.equal(r.wired, false);
+});
+
 test('path traversal is rejected', async () => {
   const r = await fetch(base + '/api/view?path=' + encodeURIComponent('../../../etc'));
   const j = await r.json();

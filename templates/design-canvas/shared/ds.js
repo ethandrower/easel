@@ -67,4 +67,27 @@
     .between { justify-content: space-between; }
     .muted { color: var(--muted); }
   </style>`);
+
+  // Easel navigation bridge. Elements wired with data-easel-nav (or plain <a href>
+  // pointing at another view) navigate for real when the prototype is opened
+  // standalone; inside the Easel canvas they instead tell the parent to fly to
+  // the target view, so the canvas stays a coherent map.
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest && e.target.closest('[data-easel-nav], a[href]');
+    if (!el) return;
+    var raw = el.getAttribute('data-easel-nav') || el.getAttribute('href');
+    if (!raw || raw.charAt(0) === '#') return;
+    var url; try { url = new URL(raw, location.href); } catch (_) { return; }
+    var isView = url.origin === location.origin && url.pathname.indexOf('/canvas/modules/') !== -1;
+    var inFrame = window.parent && window.parent !== window;
+    if (inFrame && (isView || el.hasAttribute('data-easel-nav'))) {
+      e.preventDefault();
+      var m = url.pathname.match(/\/canvas\/modules\/([^/]+)\/([^/]+)\//);
+      var target = el.getAttribute('data-easel-view') || (m ? m[1] + '/' + m[2] : '');
+      window.parent.postMessage({ easel: 'nav', target: target }, '*');
+    } else if (!inFrame && el.hasAttribute('data-easel-nav')) {
+      e.preventDefault();
+      location.href = raw;
+    }
+  }, true);
 })();

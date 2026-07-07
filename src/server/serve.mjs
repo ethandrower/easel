@@ -93,6 +93,32 @@ async function copyDir(src, dst) {
 
 async function rmDir(p) { await fs.rm(p, { recursive: true, force: true }); }
 
+// Relative href from one view's folder to another's index.html.
+function relHref(fromPath, toPath) {
+  const [fm, fv] = fromPath.split('/'), [tm, tv] = toPath.split('/');
+  return fm === tm ? `../${tv}/index.html` : `../../${tm}/${tv}/index.html`;
+}
+// Resolve a relative href (from a view) to the view path it lands in, or null.
+function resolveToView(fromRel, href) {
+  if (/^(https?:)?\/\//.test(href) || href.startsWith('#') || href.startsWith('mailto:')) return null;
+  const clean = href.split('#')[0].split('?')[0];
+  const full = path.posix.normalize(`modules/${fromRel}/${clean}`);
+  const m = full.match(/^modules\/([^/]+)\/([^/]+)(?:\/|$)/);
+  return m ? `${m[1]}/${m[2]}` : null;
+}
+// Derive real-navigation edges from a prototype's markup (data-easel-view / data-easel-nav / <a href>).
+function deriveLinks(viewDir, rel) {
+  let html;
+  try { html = fss.readFileSync(path.join(viewDir, 'index.html'), 'utf8'); } catch { return []; }
+  const seen = new Set(), out = [];
+  let m;
+  const reView = /data-easel-view=["']([^"']+)["']/g;
+  while ((m = reView.exec(html))) if (m[1] !== rel && !seen.has(m[1])) { seen.add(m[1]); out.push({ to: m[1] }); }
+  const reHref = /(?:data-easel-nav|href)=["']([^"'][^"']*)["']/g;
+  while ((m = reHref.exec(html))) { const t = resolveToView(rel, m[1]); if (t && t !== rel && !seen.has(t)) { seen.add(t); out.push({ to: t }); } }
+  return out;
+}
+
 // Walk modules/<module>/<view>/ and assemble the graph the viewer renders.
 async function scanTree(canvasRoot) {
   const modulesDir = path.join(canvasRoot, 'modules');
@@ -120,6 +146,7 @@ async function scanTree(canvasRoot) {
         status: vjson.status || 'idea',
         position: vjson.position || null,
         links: Array.isArray(vjson.links) ? vjson.links : [],
+        derivedLinks: deriveLinks(viewDir, rel),
         url: `/canvas/modules/${mod}/${view}/index.html`,
         openComments: (cjson.comments || []).filter((c) => c.status !== 'resolved').length,
         totalComments: (cjson.comments || []).length,
@@ -320,6 +347,35 @@ export function startServer({ canvasRoot, viewerRoot, port = 4321 }) {
       await fs.rename(dir, dst);
       await rewriteEdges(canvasRoot, rel, `${mod}/${id}`);
       return json(res, 200, { ok: true, path: `${mod}/${id}` });
+    }
+
+    // Wire a real navigation from an element to another view (link mode).
+    // Writes data-easel-nav/data-easel-view into the HTML and records the edge.
+    if (p === '/api/wire' && req.method === 'POST') {
+      const { path: rel, selector, to, label, before, after } = await readBody(req);
+      const dir = safeJoin(path.join(canvasRoot, 'modules'), rel || '');
+      const tdir = safeJoin(path.join(canvasRoot, 'modules'), to || '');
+      if (!dir || !exists(dir) || !tdir || !exists(tdir)) return json(res, 400, { error: 'bad path' });
+      const idx = path.join(dir, 'index.html');
+      let html = await fs.readFile(idx, 'utf8').catch(() => null);
+      let wired = false;
+      if (html != null) {
+        if (before && after && html.includes(before)) {
+          html = html.replace(before, after); wired = true;
+        } else {
+          const m = String(selector || '').match(/^#([\w-]+)$/);   // fallback: inject by id
+          if (m) {
+            const re = new RegExp('(<[a-zA-Z][^>]*\\bid=["\\\']' + m[1] + '["\\\'][^>]*?)(\\s*/?>)');
+            if (re.test(html)) { html = html.replace(re, `$1 data-easel-nav="${relHref(rel, to)}" data-easel-view="${to}"$2`); wired = true; }
+          }
+        }
+        if (wired) await fs.writeFile(idx, html);
+      }
+      const v = await readJSON(path.join(dir, 'view.json'), { links: [] });
+      v.links = v.links || [];
+      if (!v.links.some((l) => l.to === to && l.via === selector)) v.links.push({ to, label: label || '', via: selector, wired });
+      await writeJSON(path.join(dir, 'view.json'), v);
+      return json(res, 200, { ok: true, wired });
     }
 
     // ---- static: host canvas ------------------------------------------------

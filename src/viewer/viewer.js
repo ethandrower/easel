@@ -99,7 +99,7 @@
       ph.append(el('div', 'ph-title', d.title));
       frame.append(ph);
       const catchEl = el('div', 'node-catch');
-      catchEl.addEventListener('click', (e) => onViewCommentClick(e, path, frame));
+      catchEl.addEventListener('click', (e) => onCatchClick(e, path, frame));
       frame.append(catchEl);
       node.append(frame);
 
@@ -158,19 +158,25 @@
   function drawEdges() {
     edgesSvg.innerHTML = '';
     for (const [from, n] of nodes) {
-      (n.cache.view.links || []).forEach((link, li) => {
+      // merge author-drawn edges (view.json) with real-navigation edges derived from the markup
+      const edges = [];
+      (n.cache.view.links || []).forEach((l, li) => edges.push({ to: l.to, label: l.label || '', wired: !!l.wired, li }));
+      for (const l of (n.data.derivedLinks || [])) if (!edges.some((e) => e.to === l.to)) edges.push({ to: l.to, label: '', wired: true, li: -1 });
+      for (const link of edges) {
         const target = nodes.get(link.to);
-        if (!target) return;
+        if (!target) continue;
         const a = centerR(n), b = centerL(target);
         const dx = Math.max(80, Math.abs(b.x - a.x) * 0.4);
         const dpath = `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
-        const p = document.createElementNS(SVGNS, 'path');
-        p.setAttribute('d', dpath); p.setAttribute('pointer-events', 'none');
-        edgesSvg.append(p);
+        const pth = document.createElementNS(SVGNS, 'path');
+        pth.setAttribute('d', dpath); pth.setAttribute('pointer-events', 'none');
+        if (link.wired) pth.setAttribute('class', 'wired');
+        edgesSvg.append(pth);
         const hit = document.createElementNS(SVGNS, 'path');
         hit.setAttribute('d', dpath); hit.setAttribute('class', 'hit');
         hit.addEventListener('mousedown', (e) => e.stopPropagation());
-        hit.addEventListener('click', (e) => { e.stopPropagation(); openEdgePop(from, li, e.clientX, e.clientY); });
+        if (link.li >= 0) hit.addEventListener('click', (e) => { e.stopPropagation(); openEdgePop(from, link.li, e.clientX, e.clientY); });
+        else hit.addEventListener('click', (e) => { e.stopPropagation(); toast('This link is wired in the prototype markup — edit the HTML to change it'); });
         edgesSvg.append(hit);
         if (link.label) {
           const t = document.createElementNS(SVGNS, 'text');
@@ -180,7 +186,7 @@
           t.textContent = link.label;
           edgesSvg.append(t);
         }
-      });
+      }
     }
   }
 
@@ -861,21 +867,26 @@
   function setTool(t) {
     tool = t;
     document.body.classList.toggle('mode-comment', t === 'comment');
+    document.body.classList.toggle('mode-link', t === 'link');
     $('tool-pointer').classList.toggle('on', t === 'pointer');
     $('tool-comment').classList.toggle('on', t === 'comment');
+    $('tool-link').classList.toggle('on', t === 'link');
     if (t !== 'comment') { $('drop').hidden = true; dropContext = null; }
+    if (t !== 'link') { $('link-picker').hidden = true; clearLinkSrc(); }
   }
   $('tool-pointer').addEventListener('click', () => setTool('pointer'));
   $('tool-comment').addEventListener('click', () => setTool('comment'));
+  $('tool-link').addEventListener('click', () => setTool('link'));
 
-  function onViewCommentClick(e, path, frame) {
+  function onCatchClick(e, path, frame) {
     const n = nodes.get(path);
-    if (!n || !n.mounted || !n.iframe) { toast('Zoom in a little to comment on this view'); return; }
+    if (!n || !n.mounted || !n.iframe) { toast('Zoom in a little to interact with this view'); return; }
     let doc; try { doc = n.iframe.contentDocument; } catch { return; }
     if (!doc) return;
     const rect = frame.getBoundingClientRect();
     const elm = doc.elementFromPoint((e.clientX - rect.left) / view.z, (e.clientY - rect.top) / view.z);
     if (!elm) return;
+    if (tool === 'link') { startLink(path, elm, e.clientX, e.clientY); return; }
     select(path);
     dropPath = path;
     dropContext = captureContext(elm);
@@ -888,6 +899,59 @@
     d.style.top = Math.min(e.clientY + 8, window.innerHeight - h - 12) + 'px';
     $('drop-text').focus();
   }
+
+  // --- link mode (B): wire an element's click to another view --------------
+  let linkSource = null;
+  function clearLinkSrc() {
+    if (linkSource && nodes.get(linkSource.path) && nodes.get(linkSource.path).dom) nodes.get(linkSource.path).dom.classList.remove('link-src');
+    linkSource = null;
+  }
+  const relHref = (fromPath, toPath) => {
+    const [fm, fv] = fromPath.split('/'), [tm, tv] = toPath.split('/');
+    return fm === tm ? `../${tv}/index.html` : `../../${tm}/${tv}/index.html`;
+  };
+  function startLink(path, elm, x, y) {
+    clearLinkSrc();
+    linkSource = { path, elm, selector: cssPath(elm) };
+    nodes.get(path).dom.classList.add('link-src');
+    const list = $('lp-list'); list.innerHTML = '';
+    for (const [p, n] of nodes) {
+      if (p === path) continue;
+      const b = el('button');
+      b.append(document.createTextNode(n.data.title + '  '), el('span', 'lp-mod', n.data._module.title));
+      b.addEventListener('click', () => wireLink(p));
+      list.append(b);
+    }
+    const lp = $('link-picker');
+    lp.hidden = false;
+    lp.style.left = Math.max(8, Math.min(x, window.innerWidth - 312)) + 'px';
+    lp.style.top = Math.min(y + 8, window.innerHeight - 320) + 'px';
+  }
+  $('lp-cancel').addEventListener('click', () => { $('link-picker').hidden = true; clearLinkSrc(); });
+  async function wireLink(to) {
+    const src = linkSource;
+    if (!src) return;
+    let before, after;
+    try {
+      before = src.elm.outerHTML;
+      src.elm.setAttribute('data-easel-nav', relHref(src.path, to));
+      src.elm.setAttribute('data-easel-view', to);
+      after = src.elm.outerHTML;
+    } catch { /* */ }
+    const label = (src.elm.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    const res = await post('/api/wire', { path: src.path, selector: src.selector, to, label, before, after });
+    $('link-picker').hidden = true; clearLinkSrc();
+    if (res.ok) { toast(res.wired ? 'Wired — clicking it now navigates' : 'Edge added (give the element an id to wire the click)'); await reloadTree(); }
+    else toast(res.error || 'Wire failed');
+  }
+
+  // navigation from a prototype: fly to the target on the canvas, or follow it in focus
+  window.addEventListener('message', (e) => {
+    const d = e.data;
+    if (!d || d.easel !== 'nav' || !d.target || !nodes.has(d.target)) return;
+    if (!$('focus').hidden && e.source === $('focus-frame').contentWindow) openFocus(d.target);
+    else flyTo(d.target);
+  });
   $('drop-cancel').addEventListener('click', () => { $('drop').hidden = true; dropContext = null; });
   $('drop-save').addEventListener('click', async () => {
     const text = $('drop-text').value.trim();
@@ -933,6 +997,7 @@
     if (e.key === 'f') fit();
     if (e.key === 'v' || e.key === 'V') setTool('pointer');
     if (e.key === 'c' || e.key === 'C') setTool('comment');
+    if (e.key === 'l' || e.key === 'L') setTool('link');
     if (e.key === 'Escape') { $('insert-form').hidden = true; $('edge-pop').hidden = true; $('composer').hidden = true; $('drop').hidden = true; closeFocus(); setTool('pointer'); }
     if (e.key === '=' || e.key === '+') { view.z = Math.min(2, view.z * 1.2); applyTransform(); }
     if (e.key === '-') { view.z = Math.max(0.05, view.z / 1.2); applyTransform(); }

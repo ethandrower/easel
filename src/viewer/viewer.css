@@ -39,7 +39,21 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
 
 /* click-catch overlay: active only in comment mode, drops comments on any view */
 .node-catch { position: absolute; inset: 0; z-index: 4; display: none; }
-body.mode-comment .node-catch { display: block; cursor: crosshair; }
+body.mode-comment .node-catch, body.mode-link .node-catch { display: block; cursor: crosshair; }
+.node.link-src { outline: 3px solid var(--warning, #d97706); outline-offset: 2px; }
+
+/* link target picker */
+#link-picker { position: fixed; z-index: 55; width: 300px; max-height: 60vh; overflow-y: auto; background: #fff; border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+#link-picker[hidden] { display: none; }
+.lp-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 600; }
+.lp-head button { border: 0; background: none; font-size: 18px; cursor: pointer; color: var(--muted); }
+#lp-list button { display: block; width: 100%; text-align: left; font: inherit; font-size: 13px; border: 0; border-bottom: 1px solid var(--line); background: #fff; padding: 8px 12px; cursor: pointer; }
+#lp-list button:hover { background: #f0f4ff; }
+.lp-mod { font-size: 11px; color: var(--muted); }
+
+/* wired (real-navigation) edges are solid accent; documentation edges stay gray */
+#edges path.wired { stroke: var(--accent); stroke-width: 2.5; }
+#edges marker path { stroke: none; }
 
 /* floating drop composer (comment mode) */
 #drop { position: fixed; z-index: 55; width: 300px; background: #fff; border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.25); padding: 12px; }
