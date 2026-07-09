@@ -21,7 +21,7 @@ Also: `F` fit · `+`/`-` zoom · `Esc` back to pointer / close panels · double-
 A "view" is one screen. There are three ways to make one — they all produce the same thing: a folder `design-canvas/modules/<module>/<view>/` with `index.html`, `view.json`, `comments.json`.
 
 1. **`+ view` button** — pick a module + title, optionally a parent to link from. If you also fill in **"What is this screen?"**, Easel copies a ready-to-paste **Claude design prompt** on create.
-2. **✨ Design this view** (rail button on any view) — describe the screen; copies the same context-rich prompt. Paste it into Claude Code and the view fills in and live-reloads.
+2. **⧉ Prompt for Claude** (rail button on any view) — opens an editable prompt with the view's context (file path, shared classes, links, siblings) and any open comments. Type what you want under "Additional instructions", copy, and paste into Claude Code; the view fills in and live-reloads.
 3. **By hand / Claude Code** — just create the folder and the three files. The server sees it immediately and the canvas live-reloads. Minimal `view.json`:
    ```json
    { "title": "Profile", "status": "idea", "position": { "x": 80, "y": 80 }, "links": [] }
@@ -54,13 +54,13 @@ Wired/derived edges are edited by changing the HTML (Easel tells you when you cl
 
 ## Handing feedback to Claude Code
 
-- **⧉ Copy Claude prompt** (per view, in the rail/focus bar) or **⧉ resolve all** (toolbar) copies a precise, paste-ready instruction — each open comment with its selector, current markup, and location.
-- Paste it into Claude Code. The shipped **`easel-resolve`** skill tells Claude to edit each `index.html` at the pinned selector and mark the comment resolved. The canvas live-reloads with the changes.
+- **⧉ Prompt for Claude** (per view, in the rail and the focus bar) or **⧉ resolve all** (toolbar) opens an editable prompt — each open comment with its selector, current markup, and location, plus the view's design context. Edit it if you like, then **⧉ Copy** (the text is pre-selected, so ⌘/Ctrl+C also works).
+- Paste it into Claude Code. The shipped **`easel-resolve`** skill tells Claude to edit each `index.html` at the pinned selector and mark the comment resolved. The canvas live-reloads with the changes — if you keep a view open full-screen, it reloads there too, so you can watch the redesign land.
 
 ## The whole loop, end to end
 
 1. `+ view` → describe it → paste the design prompt into Claude → screen appears.
 2. `L` wire its buttons to other screens.
 3. `C` drop feedback on anything that's off.
-4. **Copy Claude prompt** → paste → Claude applies it → live-reload.
+4. **⧉ Prompt for Claude** → copy → paste → Claude applies it → live-reload.
 5. Flip the view to **approved** when it's done.

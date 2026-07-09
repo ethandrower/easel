@@ -150,8 +150,6 @@ body.mode-comment .node-catch, body.mode-link .node-catch { display: block; curs
 .composer-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .composer-actions button { font: inherit; font-size: 12px; border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 5px 12px; cursor: pointer; }
 .composer-actions .primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-.copy-prompt { font: inherit; font-size: 13px; border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 7px; width: 100%; cursor: pointer; margin-top: 8px; }
-.copy-prompt:hover { border-color: var(--accent); color: var(--accent); }
 #copy-all { border-color: var(--accent); color: var(--accent); }
 
 /* link handle + temp edge while dragging a new link */
@@ -233,10 +231,12 @@ body.mode-comment .node-catch, body.mode-link .node-catch { display: block; curs
 .insert-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .insert-actions button { font: inherit; font-size: 13px; border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
 .insert-actions .primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-#insert-form textarea, #design-panel textarea { display: block; width: 100%; font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; margin-top: 3px; resize: vertical; }
+#insert-form textarea { display: block; width: 100%; font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; margin-top: 3px; resize: vertical; }
 .insert-hint { font-size: 11px; color: var(--muted); margin: 8px 0 0; }
-#design-panel { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,.2); padding: 18px; width: 360px; z-index: 50; }
-#design-panel[hidden] { display: none; }
-#design-panel h3 { margin: 0 0 12px; font-size: 14px; }
+#prompt-panel { position: fixed; top: 48px; left: 50%; transform: translateX(-50%); background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,.2); padding: 18px; width: min(680px, 92vw); z-index: 50; }
+#prompt-panel[hidden] { display: none; }
+#prompt-panel h3 { margin: 0 0 6px; font-size: 14px; }
+.prompt-hint { font-size: 11px; color: var(--muted); margin: 0 0 10px; }
+#prompt-text { display: block; width: 100%; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; resize: vertical; max-height: 60vh; background: var(--bg, #fafafa); }
 .design-btn { display: block; width: 100%; margin-top: 8px; font: inherit; font-size: 13px; font-weight: 600; border: 1px solid var(--accent); background: var(--primary-weak, #eff6ff); color: var(--accent); border-radius: 6px; padding: 8px; cursor: pointer; }
 .design-btn:hover { background: #e4edff; }

@@ -30,7 +30,7 @@
         <span id="zoom-label">100%</span>
         <button id="zoom-in" title="Zoom in">+</button>
         <input id="search" type="search" placeholder="jump to view…" autocomplete="off" />
-        <button id="copy-all" title="Copy a prompt to resolve every open comment">⧉ resolve all</button>
+        <button id="copy-all" title="Open an editable prompt to resolve every open comment">⧉ resolve all</button>
         <button id="add-view" title="Insert a new view">+ view</button>
       </div>
     </header>
@@ -67,7 +67,7 @@
           </div>
           <div class="v-id"><code id="v-path"></code></div>
           <button id="act-focus" class="focus-btn" title="Open this view full screen (or double-click it)">⛶ Open full screen</button>
-          <button id="act-design" class="design-btn" title="Copy a Claude prompt to design or redesign this view">✨ Design this view</button>
+          <button id="open-prompt" class="design-btn" title="Open an editable Claude prompt for this view (design context + open comments)">⧉ Prompt for Claude</button>
           <div class="v-actions">
             <button id="act-rename" title="Rename the folder id">rename</button>
             <button id="act-duplicate" title="Duplicate this view">duplicate</button>
@@ -96,7 +96,6 @@
               <button id="composer-save" class="primary">Add comment</button>
             </div>
           </div>
-          <button id="copy-prompt" class="copy-prompt" title="Copy a ready-to-paste instruction for Claude Code">⧉ Copy Claude prompt</button>
         </section>
       </div>
     </aside>
@@ -115,12 +114,13 @@
       <p class="insert-hint">If you describe it, a Claude design prompt is copied on create — paste it into Claude Code.</p>
     </div>
 
-    <div id="design-panel" hidden>
-      <h3>Design “<span id="design-title"></span>”</h3>
-      <textarea id="design-desc" rows="3" placeholder="Describe the screen you want…"></textarea>
+    <div id="prompt-panel" hidden>
+      <h3>Prompt · <span id="prompt-title"></span></h3>
+      <p class="prompt-hint">Edit anything, then copy and paste into Claude Code. Add what you want built or changed under “Additional instructions”.</p>
+      <textarea id="prompt-text" rows="16" spellcheck="false"></textarea>
       <div class="insert-actions">
-        <button id="design-cancel">Cancel</button>
-        <button id="design-copy" class="primary">⧉ Copy design prompt</button>
+        <button id="prompt-close">Close</button>
+        <button id="prompt-copy" class="primary">⧉ Copy</button>
       </div>
     </div>
     <div id="edge-pop" hidden>
@@ -159,7 +159,7 @@
         <span id="focus-title"></span>
         <div class="focus-actions">
           <button id="focus-comment" title="Pin a comment to an element">💬 Comment</button>
-          <button id="focus-copy" title="Copy a Claude prompt for this view's open comments">⧉ Copy Claude prompt</button>
+          <button id="focus-copy" title="Open an editable Claude prompt for this view">⧉ Prompt for Claude</button>
           <button id="focus-close" title="Back to canvas (Esc)">× close</button>
         </div>
       </div>

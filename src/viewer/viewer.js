@@ -15,7 +15,22 @@
   const el = (tag, cls, txt) => { const n = document.createElement(tag); if (cls) n.className = cls; if (txt != null) n.textContent = txt; return n; };
   const api = (u, opts) => fetch(u, opts).then((r) => r.json());
   const toast = (msg) => { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 1800); };
-  const copy = async (text) => { try { await navigator.clipboard.writeText(text); toast('Copied to clipboard'); } catch { toast('Copy failed'); } };
+  // Clipboard with a legacy fallback: navigator.clipboard needs a secure
+  // context + focus and silently fails in some setups, so fall back to a
+  // hidden textarea + execCommand before giving up.
+  const copy = async (text) => {
+    try { await navigator.clipboard.writeText(text); toast('Copied to clipboard'); return true; } catch { /* fall through */ }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.top = '-1000px'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (ok) { toast('Copied to clipboard'); return true; }
+    } catch { /* fall through */ }
+    toast('Copy failed — select the text and press ⌘/Ctrl+C');
+    return false;
+  };
   // transparent overlay so mouse events keep firing while dragging over iframes
   const dragShield = () => { const s = document.createElement('div'); s.style.cssText = 'position:fixed;inset:0;z-index:9999'; document.body.append(s); return () => s.remove(); };
 
@@ -684,16 +699,16 @@
     if (!blocks.length) return null;
     return `Resolve these ${blocks.length} open Easel design comment(s). For each: open the referenced view's index.html under design-canvas/modules/<path>/, edit the element at the target selector to satisfy the comment (use the shared classes in design-canvas/shared/ds.js), then set that comment's "status" to "resolved" in the same folder's comments.json.\n\n${blocks.join('\n\n')}`;
   }
-  $('copy-prompt').addEventListener('click', () => {
+  // Per-view prompt: full design context + any open comments + a free-text
+  // area, all in one editable modal (see composePrompt / openPrompt below).
+  $('open-prompt').addEventListener('click', () => {
     if (!selected) return;
-    const p = buildPrompt([selected]);
-    if (!p) { toast('No open comments on this view'); return; }
-    copy(p);
+    openPrompt(composePrompt(selected), nodes.get(selected).data.title);
   });
   $('copy-all').addEventListener('click', () => {
     const p = buildPrompt([...nodes.keys()]);
     if (!p) { toast('No open comments anywhere'); return; }
-    copy(p);
+    openPrompt(p, 'all open comments');
   });
 
   // --- full-page focus mode (view + contextual commenting) ------------------
@@ -720,9 +735,7 @@
   $('act-focus').addEventListener('click', () => { if (selected) openFocus(selected); });
   $('focus-copy').addEventListener('click', () => {
     if (!focusPath) return;
-    const p = buildPrompt([focusPath]);
-    if (!p) { toast('No open comments on this view'); return; }
-    copy(p);
+    openPrompt(composePrompt(focusPath), nodes.get(focusPath).data.title);
   });
 
   function renderFocusPins() {
@@ -991,44 +1004,74 @@
     if (res.ok) {
       await reloadTree();
       if (nodes.has(res.path)) flyTo(res.path);
-      if (desc && nodes.has(res.path)) { copy(designPrompt(res.path, desc)); toast('View created — design prompt copied, paste into Claude Code'); }
+      if (desc && nodes.has(res.path)) openPrompt(composePrompt(res.path, desc), res.path.split('/').pop());
       else toast('View created');
     } else toast(res.error || 'Create failed');
   });
 
-  // --- design a view: emit a rich Claude prompt from a short description ----
-  function designPrompt(path, description) {
+  // --- one editable Claude prompt per view ---------------------------------
+  // Merges the design context (file, shared classes, links, siblings) with any
+  // open comments and a blank "Additional instructions" area, so a single
+  // prompt covers both "design this screen" and "apply this feedback".
+  function composePrompt(path, seed) {
     const n = nodes.get(path);
     const links = (n.cache.view.links || []).map((l) => l.to);
     const sibs = [...nodes.keys()].filter((p) => p !== path && nodes.get(p).data._module.id === n.data._module.id).map((p) => nodes.get(p).data.title);
-    const lines = [
-      `Design the "${n.data.title}" screen for the "${n.data._module.title}" module.`,
-      `File to write: design-canvas/modules/${path}/index.html — a complete, standalone HTML page.`,
-      '',
-      `What it should be: ${description || '(describe the screen)'}`,
-      '',
-      'Requirements:',
-      '- Keep <script src="../../../shared/ds.js"></script> in <head> (it provides the shared design system).',
-      '- Build with the shared classes: .page (wrapper), .card, .btn (+ .secondary/.danger/.ghost), .badge (+ .gray/.blue/.green/.amber/.red), .field (label+input), table, .row/.between/.muted. Do not invent a parallel style system.',
-      '- Give buttons and links stable ids so they can be wired to other screens.',
-      '- Make it look like a real, polished product screen — realistic copy and sensible layout.',
-    ];
-    if (links.length) lines.push(`- It already links to: ${links.join(', ')} (wire buttons with data-easel-nav if relevant).`);
-    if (sibs.length) lines.push(`- Sibling screens in this module (match their visual language): ${sibs.join(', ')}.`);
-    return lines.join('\n');
+    const open = (n.cache.comments.comments || []).filter((c) => c.status !== 'resolved');
+    const L = [];
+    L.push(`Work on the "${n.data.title}" screen (${n.data._module.title} module).`);
+    L.push(`File: design-canvas/modules/${path}/index.html — a complete, standalone HTML page.`);
+    L.push('');
+    L.push('Design system:');
+    L.push('- Keep <script src="../../../shared/ds.js"></script> in <head> (it provides the shared design system).');
+    L.push('- Build with the shared classes: .page (wrapper), .card, .btn (+ .secondary/.danger/.ghost), .badge (+ .gray/.blue/.green/.amber/.red), .field (label+input), table, .row/.between/.muted. Do not invent a parallel style system.');
+    L.push('- Give buttons and links stable ids so they can be wired to other screens.');
+    if (links.length) L.push(`- This view links to: ${links.join(', ')} (wire buttons with data-easel-nav where relevant).`);
+    if (sibs.length) L.push(`- Sibling screens in this module (match their visual language): ${sibs.join(', ')}.`);
+    if (open.length) {
+      L.push('');
+      L.push(`Open feedback to address (${open.length}) — edit the element at each selector, then set that comment's "status" to "resolved" in design-canvas/modules/${path}/comments.json:`);
+      open.forEach((c, i) => {
+        L.push(`${i + 1}. ${JSON.stringify(c.text)}`);
+        if (c.selector) L.push(`   • selector: ${c.selector}`);
+        if (c.tag) L.push(`   • element: <${c.tag}>` + (c.elementText ? ` text=${JSON.stringify(c.elementText)}` : ''));
+        if (c.snippet) L.push(`   • current markup: ${c.snippet}`);
+      });
+    }
+    L.push('');
+    L.push('Additional instructions:');
+    L.push(seed ? seed.trim() : '');
+    return L.join('\n');
   }
-  $('act-design').addEventListener('click', () => {
-    if (!selected) return;
-    $('design-title').textContent = nodes.get(selected).data.title;
-    $('design-desc').value = '';
-    $('design-panel').hidden = false;
-    $('design-desc').focus();
-  });
-  $('design-cancel').addEventListener('click', () => { $('design-panel').hidden = true; });
-  $('design-copy').addEventListener('click', () => {
-    if (!selected) return;
-    copy(designPrompt(selected, $('design-desc').value.trim()));
-    $('design-panel').hidden = true;
+  function openPrompt(text, title) {
+    if (!text) { toast('Nothing to prompt about yet'); return; }
+    $('prompt-title').textContent = title || '';
+    $('prompt-text').value = text;
+    $('prompt-panel').hidden = false;
+    const ta = $('prompt-text');
+    ta.focus();
+    // put the cursor at the end (the blank "Additional instructions" line)
+    ta.setSelectionRange(text.length, text.length);
+    ta.scrollTop = ta.scrollHeight;
+  }
+  $('prompt-close').addEventListener('click', () => { $('prompt-panel').hidden = true; });
+  $('prompt-copy').addEventListener('click', () => {
+    // Copy from the visible, selected textarea — most reliable under a real
+    // click's user activation. Leave it selected so ⌘/Ctrl+C works if both
+    // programmatic paths are blocked.
+    const ta = $('prompt-text');
+    ta.focus(); ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch { /* fall through */ }
+    if (ok) { toast('Copied to clipboard'); return; }
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(ta.value).then(
+        () => toast('Copied to clipboard'),
+        () => toast('Press ⌘/Ctrl+C to copy the selected text'),
+      );
+      return;
+    }
+    toast('Press ⌘/Ctrl+C to copy the selected text');
   });
 
   // --- keyboard shortcuts ---------------------------------------------------
@@ -1038,16 +1081,29 @@
     if (e.key === 'v' || e.key === 'V') setTool('pointer');
     if (e.key === 'c' || e.key === 'C') setTool('comment');
     if (e.key === 'l' || e.key === 'L') setTool('link');
-    if (e.key === 'Escape') { $('insert-form').hidden = true; $('design-panel').hidden = true; $('edge-pop').hidden = true; $('composer').hidden = true; $('drop').hidden = true; closeFocus(); setTool('pointer'); }
+    if (e.key === 'Escape') { $('insert-form').hidden = true; $('prompt-panel').hidden = true; $('edge-pop').hidden = true; $('composer').hidden = true; $('drop').hidden = true; closeFocus(); setTool('pointer'); }
     if (e.key === '=' || e.key === '+') { view.z = Math.min(2, view.z * 1.2); applyTransform(); }
     if (e.key === '-') { view.z = Math.max(0.05, view.z / 1.2); applyTransform(); }
   });
 
   // --- live reload ----------------------------------------------------------
+  // A file change (e.g. Claude Code editing a view) pings this; we rebuild the
+  // canvas (which remounts iframes from disk) and, if a view is open
+  // full-screen, refresh that frame too — but not while its comment composer is
+  // open, so we don't yank the page out from under an in-progress annotation.
   try {
     const es = new EventSource('/__reload');
     let t;
-    es.onmessage = () => { clearTimeout(t); t = setTimeout(() => reloadTree(true), 150); };
+    es.onmessage = () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        reloadTree(true);
+        if (focusPath && $('focus-composer').hidden) {
+          const fr = $('focus-frame');
+          if (fr.src && fr.src !== 'about:blank') fr.contentWindow.location.reload();
+        }
+      }, 150);
+    };
   } catch {}
 
   load();
