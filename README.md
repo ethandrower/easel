@@ -32,7 +32,7 @@ Then:
 - **Status workflow** — every view is `idea → in-progress → in-review → approved`; each screen's frame border and title chip are colored by status, with toolbar filters to dim what you're not working on.
 - **Organized at scale** — a **module switcher** to view one module at a time, `⤢ arrange` auto-layout, module group backdrops, a minimap, `jump to view` search, and **iframe virtualization** so hundreds of screens stay smooth.
 - **Canvas annotations** — drop big **text headings** and **post-it notes** anywhere (above a screen, next to a flow) to title areas and leave written notes for engineers; they persist in `labels.json` and follow their module.
-- **Figma-style navigation** — ⌘/Ctrl `+`/`-`/`0` zoom the canvas (not the browser), and holding `Space` grab-pans from anywhere — even with the cursor over a design.
+- **Figma-style navigation** — ⌘/Ctrl `+`/`-`/`0` zoom the canvas (not the browser), and holding `Space` grab-pans from anywhere — even with the cursor over a design. Clicking anywhere on a prototype that *isn't* wired briefly flashes every element that *is*, so you can see at a glance where it's functional.
 - **Claude loop** — one **⧉ Prompt for Claude** button per view (plus **⧉ resolve all** for everything open) opens an editable prompt with each comment's selector + markup + location. Paste it into Claude Code; the shipped `easel-resolve` skill applies it and marks comments resolved. **Live-reload** shows the result instantly — including in full-screen focus mode, so you can watch Claude redesign a screen in real time.
 
 ## How it works

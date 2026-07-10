@@ -154,7 +154,7 @@
     if (n.mounted) return;
     const iframe = document.createElement('iframe');
     iframe.src = n.data.url;
-    iframe.addEventListener('load', () => renderPins(n.data.id));
+    iframe.addEventListener('load', () => { renderPins(n.data.id); armHotspotFlash(iframe); });
     n.frame.append(iframe);
     n.iframe = iframe; n.mounted = true;
   }
@@ -751,6 +751,7 @@
     const fr = $('focus-frame');
     fr.onload = () => {
       renderFocusPins();
+      armHotspotFlash(fr);
       try { fr.contentWindow.addEventListener('scroll', renderFocusPins, { passive: true }); } catch { /* */ }
     };
     fr.src = n.data.url;
@@ -991,6 +992,41 @@
     if (!$('focus').hidden && e.source === $('focus-frame').contentWindow) openFocus(d.target);
     else flyTo(d.target);
   });
+
+  // --- dead-click hotspot flash (Figma-style) --------------------------------
+  // Clicking anything on a prototype that has no wired action briefly flashes
+  // every element that DOES (data-easel-nav / links to other views), so you can
+  // see at a glance where the prototype is functional and where it isn't.
+  const HOTSPOT_SEL = '[data-easel-nav], a[href*="index.html"]';
+  function armHotspotFlash(iframe) {
+    let doc;
+    try { doc = iframe.contentDocument; } catch { return; }
+    if (!doc || doc.__easelFlashArmed) return;
+    doc.__easelFlashArmed = true;
+    doc.addEventListener('click', (e) => {
+      if (tool !== 'pointer') return;
+      if (!e.target.closest) return;
+      if (e.target.closest(HOTSPOT_SEL)) return;                       // click did something — no flash
+      if (e.target.closest('input, textarea, select, label')) return;  // typing/toggling is a real interaction
+      flashHotspots(doc);
+    });
+  }
+  function flashHotspots(doc) {
+    if (!doc.getElementById('__easel-flash-style')) {
+      const st = doc.createElement('style');
+      st.id = '__easel-flash-style';
+      st.textContent = '.__easel-flash{animation:__easel-flash .7s ease-out}' +
+        '@keyframes __easel-flash{0%,55%{outline:3px solid rgba(59,130,246,.95);outline-offset:2px;box-shadow:0 0 0 5px rgba(59,130,246,.22)}' +
+        '100%{outline:3px solid rgba(59,130,246,0);outline-offset:2px;box-shadow:0 0 0 5px rgba(59,130,246,0)}}';
+      (doc.head || doc.documentElement).append(st);
+    }
+    doc.querySelectorAll(HOTSPOT_SEL).forEach((h) => {
+      h.classList.remove('__easel-flash');
+      void h.offsetWidth;   // restart the animation if it's mid-flight
+      h.classList.add('__easel-flash');
+      setTimeout(() => h.classList.remove('__easel-flash'), 750);
+    });
+  }
   $('drop-cancel').addEventListener('click', () => { $('drop').hidden = true; dropContext = null; });
   $('drop-save').addEventListener('click', async () => {
     const text = $('drop-text').value.trim();

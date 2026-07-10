@@ -53,6 +53,8 @@ Easel distinguishes *documentation* links (just a drawn arrow) from *real* navig
 
 Wired/derived edges are edited by changing the HTML (Easel tells you when you click one); documentation edges are edited from the canvas.
 
+**Dead clicks flash the hotspots.** Click anything on a prototype that has no wired action — on the canvas or in full-screen focus — and every element that *does* navigate flashes blue for a moment (Figma-style), so you can see instantly where the prototype is functional and where it isn't. Typing in inputs doesn't count as a dead click.
+
 ## Commenting (the feedback loop)
 
 - Press `C` (or the 💬 tool), then click any element on any view — a comment pins to that element with rich context (selector, tag, current markup, on-screen box). Works on the canvas *and* in full-screen focus.
