@@ -17,13 +17,20 @@ Open-core. The golden rule: **never cripple local.** Single-player is complete a
 - [x] Cross-platform live-reload (recursive watch + mtime-poll fallback for Linux)
 - [x] Server API test suite (`npm test`)
 - [x] Browser-verified end-to-end
+- [x] Full-page focus mode + element-pinned commenting (canvas and focus)
+- [x] Link mode: wire real navigation (`data-easel-nav`) + auto-derived edges from markup
+- [x] Real click-through edges (standalone navigates; canvas flies; focus follows)
+- [x] One editable "Prompt for Claude" modal per view (design context + open comments), reliable copy
+- [x] Live-reload of the focus frame (watch Claude redesign a screen full-screen)
 
 ## v2 — OSS polish (next)
 
+Now dogfooding on a real product canvas (citemed Evidence Cloud) — items get promoted here as real use demands them.
+
+- [ ] npm publish — the `easel` name is TAKEN on npm (someone else's v0.2.6), so `npx easel` installs the wrong package. Publish under a scope (`@ethandrower/easel`) or pick a new name; until then, run from a checkout (`node <easel>/bin/cli.mjs`) or `npm link`. Fix the README quickstart when decided.
 - [ ] Variant/state stacks per view (modal open, empty, error) as child nodes
 - [ ] Module management in-UI (create/rename/recolor/reorder; delete module)
 - [ ] Broken-edge warnings + a kanban (by-status) view toggle
-- [ ] Real click-through edges (a prototype button navigates to the linked view)
 - [ ] Export (static bundle / PDF of a board)
 - [ ] Optional `ds.js` auto-detection for common setups (Tailwind, CSS vars)
 - [ ] Group backdrops handle spatially-interleaved modules gracefully
