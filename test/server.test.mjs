@@ -105,3 +105,15 @@ test('path traversal is rejected', async () => {
   const j = await r.json();
   assert.ok(j.error || !j.view || Object.keys(j.view || {}).length === 0);
 });
+
+test('labels round-trip through labels.json at the canvas root', async () => {
+  const empty = await get('/api/labels');
+  assert.deepEqual(empty, { labels: [] });
+  const r = await post('/api/labels', { labels: [{ id: 'l1', kind: 'note', text: 'ship it', x: 40, y: 60, module: null }] });
+  assert.ok(r.ok);
+  assert.ok(has('labels.json'));
+  const back = await get('/api/labels');
+  assert.equal(back.labels.length, 1);
+  assert.equal(back.labels[0].kind, 'note');
+  assert.equal(back.labels[0].text, 'ship it');
+});

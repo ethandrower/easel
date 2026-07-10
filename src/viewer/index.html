@@ -16,6 +16,7 @@
         <button id="tool-comment" class="tool" title="Comment — drop comments on any view (C)">💬 comment</button>
         <button id="tool-link" class="tool" title="Link — wire an element to another view (L)">🔗 link</button>
       </div>
+      <select id="module-filter" title="Show a single module"><option value="">all modules</option></select>
       <div id="filters" title="Filter by status">
         <button class="chip" data-status="idea">idea</button>
         <button class="chip" data-status="in-progress">in progress</button>
@@ -23,6 +24,8 @@
         <button class="chip" data-status="approved">approved</button>
       </div>
       <div class="tools">
+        <button id="add-heading" title="Add a big text heading to the canvas">T heading</button>
+        <button id="add-note" title="Add a post-it note (annotations for engineers)">🗒 note</button>
         <button id="overview-toggle" title="All open comments">☰ comments <span id="overview-count"></span></button>
         <button id="arrange" title="Auto-arrange the graph by its links">⤢ arrange</button>
         <button id="fit" title="Fit to view">◹ fit</button>
@@ -40,6 +43,7 @@
       <div id="surface">
         <div id="groups"></div>
         <svg id="edges" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div id="labels"></div>
         <div id="nodes"></div>
       </div>
       <svg id="minimap" xmlns="http://www.w3.org/2000/svg"></svg>

@@ -74,6 +74,30 @@ body.mode-comment .node-catch, body.mode-link .node-catch { display: block; curs
 /* canvas */
 #canvas { grid-area: canvas; position: relative; overflow: hidden; cursor: grab; }
 .node.dim { opacity: .12; filter: grayscale(1); pointer-events: none; }
+.node.mod-hidden { display: none; }
+body.mode-place-label #canvas { cursor: crosshair; }
+
+/* hold-space panning: designs stop catching the mouse so a drag pans anywhere */
+body.space-pan #canvas { cursor: grab; }
+body.space-pan #canvas:active { cursor: grabbing; }
+body.space-pan .node, body.space-pan .label { pointer-events: none; }
+body.space-pan #edges .hit { pointer-events: none; }
+
+/* module switcher */
+#module-filter { font: inherit; font-size: 12px; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; background: #fff; color: var(--ink); max-width: 170px; cursor: pointer; }
+
+/* canvas labels: big headings + post-it notes */
+#labels { position: absolute; left: 0; top: 0; }
+.label { position: absolute; cursor: grab; user-select: none; }
+.label:active { cursor: grabbing; }
+.label-heading .label-text { font-size: 64px; font-weight: 800; color: #3d4552; letter-spacing: -.5px; white-space: pre; }
+.label-note { width: 340px; background: #fef3c7; border: 1px solid rgba(217, 119, 6, .35); border-radius: 4px; box-shadow: 0 10px 24px rgba(120, 90, 0, .18); padding: 18px 20px; transform: rotate(-.6deg); }
+.label-note .label-text { font-size: 20px; line-height: 1.45; color: #4a3f10; white-space: pre-wrap; word-wrap: break-word; }
+.label-del { position: absolute; top: -14px; right: -14px; width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); background: #fff; color: var(--muted); font-size: 15px; line-height: 1; cursor: pointer; display: none; place-items: center; box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+.label:hover .label-del { display: grid; }
+.label-edit { display: block; font: inherit; border: 2px solid var(--accent); border-radius: 6px; background: #fff; padding: 6px 10px; resize: none; }
+.label-heading .label-edit { font-size: 64px; font-weight: 800; letter-spacing: -.5px; width: 720px; }
+.label-note .label-edit { font-size: 20px; line-height: 1.45; width: 100%; min-height: 130px; background: #fffbeb; border-color: #d97706; }
 
 /* module grouping backdrops */
 #groups { position: absolute; left: 0; top: 0; }
@@ -100,9 +124,19 @@ body.mode-comment .node-catch, body.mode-link .node-catch { display: block; curs
 #edges path { fill: none; stroke: #b6bcc6; stroke-width: 2; }
 #edges .edge-label { fill: var(--muted); font-size: 12px; pointer-events: none; }
 
-/* a node = a titled frame wrapping a live iframe of the prototype */
-.node { position: absolute; width: var(--frame-w); background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 22px rgba(20,25,40,.10); overflow: visible; }
+/* a node = a titled frame wrapping a live iframe of the prototype.
+   The frame border is colored by approval status so state reads at a glance. */
+.node { position: absolute; width: var(--frame-w); background: #fff; border: 3px solid var(--line); border-radius: 10px; box-shadow: 0 6px 22px rgba(20,25,40,.10); overflow: visible; }
+.node.st-idea { border-color: var(--idea); }
+.node.st-in-progress { border-color: var(--in-progress); }
+.node.st-in-review { border-color: var(--in-review); }
+.node.st-approved { border-color: var(--approved); }
 .node.selected { outline: 3px solid var(--accent); outline-offset: 2px; }
+.node-status { font-size: 11px; font-weight: 600; border: 1px solid; border-radius: 999px; padding: 1px 9px; white-space: nowrap; }
+.node.st-idea .node-status { color: var(--idea); border-color: var(--idea); background: #f3f4f6; }
+.node.st-in-progress .node-status { color: var(--in-progress); border-color: var(--in-progress); background: #fffbeb; }
+.node.st-in-review .node-status { color: var(--in-review); border-color: var(--in-review); background: #eff6ff; }
+.node.st-approved .node-status { color: var(--approved); border-color: var(--approved); background: #ecfdf3; }
 .node-head { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--line); background: #fbfcfd; border-radius: 10px 10px 0 0; cursor: grab; user-select: none; }
 .node-head:active { cursor: grabbing; }
 .node-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }

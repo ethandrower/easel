@@ -38,6 +38,10 @@
   const nodes = new Map();          // path -> { data, cache:{view,comments}, dom, iframe }
   let selected = null;
   let deleteArmed = false;
+  let labels = [];                  // canvas text labels (headings / post-its), from labels.json
+  let activeModule = null;          // module isolation: null = show all modules
+  let pendingLabel = null;          // 'heading' | 'note' while waiting for a placement click
+  const inActiveModule = (n) => !activeModule || n.data._module.id === activeModule;
 
   const surface = $('surface');
   const nodesLayer = $('nodes');
@@ -68,8 +72,10 @@
   async function reloadTree(keepSelection = true) {
     const my = ++reloadSeq;                       // newest reload wins; older ones bail
     const prevPos = new Map([...nodes].map(([p, n]) => [p, n.data.position]));
-    const tree = await api('/api/tree');
+    const [tree, labelData] = await Promise.all([api('/api/tree'), api('/api/labels')]);
     if (my !== reloadSeq) return;                 // superseded while fetching the tree
+    labels = labelData.labels || [];
+    fillModuleFilter(tree);
     const all = [];
     tree.modules.forEach((mod, mi) => mod.views.forEach((v, vi) => {
       v._module = mod;
@@ -96,11 +102,14 @@
       node.style.left = d.position.x + 'px';
       node.style.top = d.position.y + 'px';
       node.dataset.path = path;
+      node.classList.add('st-' + (d.status || 'idea'));
+      if (!inActiveModule(n)) node.classList.add('mod-hidden');
 
       const head = el('div', 'node-head');
       const dot = el('span', 'node-dot'); dot.style.background = statusColor(d.status);
       head.append(dot, el('span', 'node-title', d.title));
       const right = el('div', 'node-head-right');
+      right.append(el('span', 'node-status', d.status));
       const open = (n.cache.comments.comments || []).filter((c) => c.status !== 'resolved').length;
       if (open) right.append(el('span', 'node-badge', open + '💬'));
       const expand = el('span', 'node-expand', '⛶'); expand.title = 'Open full screen';
@@ -132,6 +141,8 @@
     if (selected && nodes.has(selected)) nodes.get(selected).dom.classList.add('selected');
     drawGroups();
     drawEdges();
+    // don't rebuild the labels layer out from under an active label editor
+    if (!document.querySelector('.label-edit')) renderLabels();
     applyFilter();
     drawMinimap();
     updateOverviewCount();
@@ -159,6 +170,7 @@
     const margin = Math.max(r.width, r.height) * 0.6;
     for (const [, n] of nodes) {
       if (!n.dom) continue;
+      if (!inActiveModule(n)) { unmountIframe(n); continue; }
       const d = n.data.position;
       const left = view.x + d.x * view.z, top = view.y + d.y * view.z;
       const w = FRAME_W * view.z, h = (HEAD_H + FRAME_H) * view.z;
@@ -173,13 +185,14 @@
   function drawEdges() {
     edgesSvg.innerHTML = '';
     for (const [from, n] of nodes) {
+      if (!inActiveModule(n)) continue;
       // merge author-drawn edges (view.json) with real-navigation edges derived from the markup
       const edges = [];
       (n.cache.view.links || []).forEach((l, li) => edges.push({ to: l.to, label: l.label || '', wired: !!l.wired, li }));
       for (const l of (n.data.derivedLinks || [])) if (!edges.some((e) => e.to === l.to)) edges.push({ to: l.to, label: '', wired: true, li: -1 });
       for (const link of edges) {
         const target = nodes.get(link.to);
-        if (!target) continue;
+        if (!target || !inActiveModule(target)) continue;
         const a = centerR(n), b = centerL(target);
         const dx = Math.max(80, Math.abs(b.x - a.x) * 0.4);
         const dpath = `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
@@ -206,9 +219,7 @@
   }
 
   // --- module group backdrops ----------------------------------------------
-  function drawGroups() {
-    const groups = $('groups');
-    groups.innerHTML = '';
+  function moduleBounds() {
     const byMod = new Map();
     for (const [, n] of nodes) {
       const m = n.data._module;
@@ -217,8 +228,15 @@
       g.minX = Math.min(g.minX, d.x); g.minY = Math.min(g.minY, d.y);
       g.maxX = Math.max(g.maxX, d.x + FRAME_W); g.maxY = Math.max(g.maxY, d.y + HEAD_H + FRAME_H);
     }
+    return byMod;
+  }
+  function drawGroups() {
+    const groups = $('groups');
+    groups.innerHTML = '';
+    const byMod = moduleBounds();
     const PAD = 60;
-    for (const [, g] of byMod) {
+    for (const [id, g] of byMod) {
+      if (activeModule && id !== activeModule) continue;
       const color = g.mod.color || '#94a3b8';
       const div = el('div', 'group');
       div.style.left = (g.minX - PAD) + 'px'; div.style.top = (g.minY - PAD) + 'px';
@@ -284,13 +302,16 @@
     if (!nodes.size) return;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const [, n] of nodes) {
+      if (!inActiveModule(n)) continue;
       const d = n.data.position;
       minX = Math.min(minX, d.x); minY = Math.min(minY, d.y);
       maxX = Math.max(maxX, d.x + FRAME_W); maxY = Math.max(maxY, d.y + HEAD_H + FRAME_H);
     }
+    if (minX === Infinity) return;
     mmScale = Math.min((MM_W - MM_PAD) / (maxX - minX), (MM_H - MM_PAD) / (maxY - minY));
     mmOff = { x: minX, y: minY };
     for (const [, n] of nodes) {
+      if (!inActiveModule(n)) continue;
       const d = n.data.position;
       const r = document.createElementNS(SVGNS, 'rect');
       r.setAttribute('class', 'mm-node');
@@ -501,7 +522,10 @@
   }
 
   canvas.addEventListener('mousedown', (e) => {
-    if (e.target.closest('.node')) return;
+    // preventDefault so the click's default focus shift can't blur the label
+    // editor that placeLabel is about to open
+    if (pendingLabel) { e.preventDefault(); placeLabel(e); return; }
+    if (e.target.closest('.node') || e.target.closest('.label')) return;
     const start = { mx: e.clientX, my: e.clientY, ox: view.x, oy: view.y };
     canvas.classList.add('panning');
     const kill = dragShield();
@@ -534,9 +558,11 @@
     if (!nodes.size) return;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const [, n] of nodes) {
+      if (!inActiveModule(n)) continue;
       minX = Math.min(minX, n.data.position.x); minY = Math.min(minY, n.data.position.y);
       maxX = Math.max(maxX, n.data.position.x + FRAME_W); maxY = Math.max(maxY, n.data.position.y + HEAD_H + FRAME_H);
     }
+    if (minX === Infinity) return;
     const r = canvas.getBoundingClientRect(), pad = 80;
     view.z = Math.max(0.05, Math.min((r.width - pad) / (maxX - minX), (r.height - pad) / (maxY - minY), 1));
     view.x = (r.width - (maxX - minX) * view.z) / 2 - minX * view.z;
@@ -977,10 +1003,133 @@
     fillComments(dropPath); renderPins(dropPath); render();
   });
 
+  // --- canvas labels: big headings + post-it notes ---------------------------
+  // Free-floating text objects: section headings to organize the canvas, and
+  // post-it notes to annotate screens for engineers. Persisted in labels.json
+  // at the canvas root; each label remembers which module backdrop it sits in
+  // so it follows that module when the canvas is isolated to one module.
+  const saveLabels = () => post('/api/labels', { labels });
+  function moduleAt(wx, wy) {
+    const PAD = 60;
+    for (const [id, g] of moduleBounds())
+      if (wx >= g.minX - PAD && wx <= g.maxX + PAD && wy >= g.minY - PAD && wy <= g.maxY + PAD) return id;
+    return null;
+  }
+  function renderLabels() {
+    const layer = $('labels');
+    layer.innerHTML = '';
+    for (const lb of labels) {
+      if (activeModule && lb.module && lb.module !== activeModule) continue;
+      const div = el('div', 'label ' + (lb.kind === 'heading' ? 'label-heading' : 'label-note'));
+      div.style.left = lb.x + 'px'; div.style.top = lb.y + 'px';
+      div.append(el('div', 'label-text', lb.text));
+      const del = el('button', 'label-del', '×'); del.title = 'Delete';
+      del.addEventListener('mousedown', (e) => e.stopPropagation());
+      del.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        labels = labels.filter((l) => l.id !== lb.id);
+        await saveLabels(); renderLabels();
+      });
+      div.append(del);
+      div.addEventListener('mousedown', (e) => startLabelDrag(e, lb, div));
+      div.addEventListener('dblclick', (e) => { e.stopPropagation(); editLabel(lb, div); });
+      layer.append(div);
+    }
+  }
+  function startLabelDrag(e, lb, div) {
+    if (e.target.closest('.label-edit')) return;
+    e.preventDefault(); e.stopPropagation();
+    const start = { mx: e.clientX, my: e.clientY, ox: lb.x, oy: lb.y };
+    let moved = false;
+    const kill = dragShield();
+    const move = (ev) => {
+      const dx = (ev.clientX - start.mx) / view.z, dy = (ev.clientY - start.my) / view.z;
+      if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+      lb.x = start.ox + dx; lb.y = start.oy + dy;
+      div.style.left = lb.x + 'px'; div.style.top = lb.y + 'px';
+    };
+    const up = () => {
+      kill(); document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+      if (moved) { lb.module = moduleAt(lb.x, lb.y); saveLabels(); }
+      else editLabel(lb, div);
+    };
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+  }
+  function editLabel(lb, div) {
+    const txt = div.querySelector('.label-text');
+    if (!txt) return;
+    const ta = document.createElement('textarea');
+    ta.className = 'label-edit';
+    ta.value = lb.text || '';
+    ta.rows = lb.kind === 'heading' ? 1 : 4;
+    txt.replaceWith(ta);
+    // focus after the triggering event's default handling so it can't be
+    // immediately blurred (a blur commits — and deletes an empty label)
+    setTimeout(() => { ta.focus(); ta.select(); }, 0);
+    let done = false;
+    const commit = async (cancel) => {
+      if (done) return; done = true;
+      if (!cancel) lb.text = ta.value.trim();
+      if (!lb.text) labels = labels.filter((l) => l.id !== lb.id);   // empty label = delete
+      await saveLabels();
+      renderLabels();
+    };
+    ta.addEventListener('mousedown', (e) => e.stopPropagation());
+    ta.addEventListener('blur', () => commit(false));
+    ta.addEventListener('keydown', (ev) => {
+      ev.stopPropagation();
+      if (ev.key === 'Escape') commit(true);
+      if (ev.key === 'Enter' && (lb.kind === 'heading' || ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); commit(false); }
+    });
+  }
+  function armLabel(kind) {
+    pendingLabel = kind;
+    document.body.classList.add('mode-place-label');
+    toast(kind === 'heading' ? 'Click the canvas to place the heading' : 'Click the canvas to place the note');
+  }
+  function placeLabel(e) {
+    const w = canvasPoint(e);
+    const kind = pendingLabel;
+    pendingLabel = null;
+    document.body.classList.remove('mode-place-label');
+    const lb = { id: 'l' + Date.now(), kind, text: '', x: w.x, y: w.y, module: moduleAt(w.x, w.y) };
+    labels.push(lb);
+    renderLabels();
+    const div = $('labels').lastElementChild;
+    if (div) editLabel(lb, div);
+  }
+  $('add-heading').addEventListener('click', () => armLabel('heading'));
+  $('add-note').addEventListener('click', () => armLabel('note'));
+
+  // --- module switcher: view one module at a time ----------------------------
+  function fillModuleFilter(tree) {
+    const sel = $('module-filter');
+    const cur = sel.value;
+    sel.innerHTML = '';
+    const all = el('option', null, 'all modules'); all.value = '';
+    sel.append(all);
+    for (const m of tree.modules) { const o = el('option', null, m.title); o.value = m.id; sel.append(o); }
+    sel.value = [...sel.options].some((o) => o.value === cur) ? cur : '';
+    activeModule = sel.value || null;
+  }
+  $('module-filter').addEventListener('change', () => {
+    activeModule = $('module-filter').value || null;
+    render(); fit();
+  });
+
   // --- toolbar --------------------------------------------------------------
+  // zoom about the viewport centre so keyboard/toolbar zoom stays anchored
+  function zoomBy(f) {
+    const r = canvas.getBoundingClientRect();
+    const sx = r.width / 2, sy = r.height / 2;
+    const w = screenToWorld(sx, sy);
+    view.z = Math.min(2, Math.max(0.05, view.z * f));
+    view.x = sx - w.x * view.z; view.y = sy - w.y * view.z;
+    applyTransform();
+  }
   $('fit').addEventListener('click', fit);
-  $('zoom-in').addEventListener('click', () => { view.z = Math.min(2, view.z * 1.2); applyTransform(); });
-  $('zoom-out').addEventListener('click', () => { view.z = Math.max(0.05, view.z / 1.2); applyTransform(); });
+  $('zoom-in').addEventListener('click', () => zoomBy(1.2));
+  $('zoom-out').addEventListener('click', () => zoomBy(1 / 1.2));
   $('search').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     const q = e.target.value.toLowerCase().trim();
@@ -1076,15 +1225,34 @@
 
   // --- keyboard shortcuts ---------------------------------------------------
   document.addEventListener('keydown', (e) => {
+    // ⌘/Ctrl +/-/0 zoom the canvas, not the browser chrome — even from inputs
+    if ((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) {
+      e.preventDefault();
+      if (e.key === '0') fit();
+      else zoomBy(e.key === '-' ? 1 / 1.2 : 1.2);
+      return;
+    }
     if (/input|textarea|select/i.test(e.target.tagName)) return;
+    // hold space = pan from anywhere, Figma-style: nodes/labels stop catching
+    // the mouse (CSS) so a drag pans even when it starts over a design
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (document.activeElement && document.activeElement.tagName === 'BUTTON') document.activeElement.blur();
+      document.body.classList.add('space-pan');
+      return;
+    }
     if (e.key === 'f') fit();
     if (e.key === 'v' || e.key === 'V') setTool('pointer');
     if (e.key === 'c' || e.key === 'C') setTool('comment');
     if (e.key === 'l' || e.key === 'L') setTool('link');
-    if (e.key === 'Escape') { $('insert-form').hidden = true; $('prompt-panel').hidden = true; $('edge-pop').hidden = true; $('composer').hidden = true; $('drop').hidden = true; closeFocus(); setTool('pointer'); }
-    if (e.key === '=' || e.key === '+') { view.z = Math.min(2, view.z * 1.2); applyTransform(); }
-    if (e.key === '-') { view.z = Math.max(0.05, view.z / 1.2); applyTransform(); }
+    if (e.key === 'Escape') { $('insert-form').hidden = true; $('prompt-panel').hidden = true; $('edge-pop').hidden = true; $('composer').hidden = true; $('drop').hidden = true; pendingLabel = null; document.body.classList.remove('mode-place-label'); closeFocus(); setTool('pointer'); }
+    if (e.key === '=' || e.key === '+') zoomBy(1.2);
+    if (e.key === '-') zoomBy(1 / 1.2);
   });
+  document.addEventListener('keyup', (e) => {
+    if (e.code === 'Space') document.body.classList.remove('space-pan');
+  });
+  window.addEventListener('blur', () => document.body.classList.remove('space-pan'));
 
   // --- live reload ----------------------------------------------------------
   // A file change (e.g. Claude Code editing a view) pings this; we rebuild the

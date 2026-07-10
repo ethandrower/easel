@@ -29,8 +29,10 @@ Then:
 - **Full-page focus mode** — double-click a view (or the ⛶ button) to open it full-screen and interact with it like a real page. Comment right there, on the actual design.
 - **Element-pinned comments** — click an element to pin a comment; it captures rich context (CSS selector, tag, current markup, on-screen box). Resolve inline; a cross-canvas **comment overview** lists everything still open.
 - **Wire real navigation (link mode)** — pick the Link tool, click an element, choose a target view. Easel writes a *real* link into the HTML: the prototype actually navigates when opened standalone, while on the canvas the click "flies" to the target node (so the map stays coherent) and in focus mode it follows through. Any `<a href>`/nav you (or Claude) write by hand is also auto-derived into edges.
-- **Status workflow** — every view is `idea → in-progress → in-review → approved`, color-coded, with toolbar filters to dim what you're not working on.
-- **Organized at scale** — `⤢ arrange` auto-lays-out the graph by its edges, plus module group backdrops, a minimap, `jump to view` search, and **iframe virtualization** so hundreds of screens stay smooth.
+- **Status workflow** — every view is `idea → in-progress → in-review → approved`; each screen's frame border and title chip are colored by status, with toolbar filters to dim what you're not working on.
+- **Organized at scale** — a **module switcher** to view one module at a time, `⤢ arrange` auto-layout, module group backdrops, a minimap, `jump to view` search, and **iframe virtualization** so hundreds of screens stay smooth.
+- **Canvas annotations** — drop big **text headings** and **post-it notes** anywhere (above a screen, next to a flow) to title areas and leave written notes for engineers; they persist in `labels.json` and follow their module.
+- **Figma-style navigation** — ⌘/Ctrl `+`/`-`/`0` zoom the canvas (not the browser), and holding `Space` grab-pans from anywhere — even with the cursor over a design.
 - **Claude loop** — one **⧉ Prompt for Claude** button per view (plus **⧉ resolve all** for everything open) opens an editable prompt with each comment's selector + markup + location. Paste it into Claude Code; the shipped `easel-resolve` skill applies it and marks comments resolved. **Live-reload** shows the result instantly — including in full-screen focus mode, so you can watch Claude redesign a screen in real time.
 
 ## How it works

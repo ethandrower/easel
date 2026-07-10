@@ -265,6 +265,17 @@ export function startServer({ canvasRoot, viewerRoot, port = 4321 }) {
       return json(res, 200, { ok: true });
     }
 
+    // Canvas text labels (big headings + post-it notes) live in labels.json at
+    // the canvas root — the same file-as-truth pattern as everything else.
+    if (p === '/api/labels') {
+      const file = path.join(canvasRoot, 'labels.json');
+      if (req.method === 'GET') return json(res, 200, await readJSON(file, { labels: [] }));
+      if (req.method === 'POST') {
+        await writeJSON(file, await readBody(req));
+        return json(res, 200, { ok: true });
+      }
+    }
+
     // Insert a new view: scaffold from _template.html, wire into the graph.
     if (p === '/api/insert' && req.method === 'POST') {
       const { module: mod, title, parent, position } = await readBody(req);

@@ -14,7 +14,15 @@ Top-left tool switcher — or keyboard:
 | `C` | **Comment** | Click any element on any view to pin a comment there |
 | `L` | **Link** | Click an element, then pick a target view to wire real navigation |
 
-Also: `F` fit · `+`/`-` zoom · `Esc` back to pointer / close panels · double-click a view (or ⛶) opens it **full screen**.
+Also: `F` fit · `+`/`-` or **⌘/Ctrl `+`/`-`/`0`** zoom (the canvas, not the browser) · **hold `Space`** to grab-pan from anywhere, even over a design · `Esc` back to pointer / close panels · double-click a view (or ⛶) opens it **full screen**.
+
+## Organizing the canvas
+
+- **Module switcher** (toolbar dropdown) — isolate one module at a time; everything else (nodes, edges, backdrops, minimap) hides and the view fits to that module. Pick "all modules" to zoom back out to the whole product.
+- **`T heading`** — click the button, then click the canvas to drop a big section heading (Figma-style). Enter commits; drag to move; hover → × to delete.
+- **`🗒 note`** — same flow, but drops a post-it note for written annotations (e.g. instructions for engineers next to a screen). ⌘/Ctrl+Enter or click-away commits; notes support multiple lines.
+- Labels live in `design-canvas/labels.json` and remember which module backdrop they sit in, so they follow it when you isolate a module.
+- Every screen's frame is **border-colored by its status** (gray idea, amber in-progress, blue in-review, green approved), with a status chip in the title bar — approval state reads at a glance, and the toolbar chips still filter.
 
 ## Creating views
 
