@@ -60,20 +60,16 @@ body.mode-comment .node-catch, body.mode-link .node-catch { display: block; curs
 #drop[hidden] { display: none; }
 #drop textarea { width: 100%; font: inherit; font-size: 14px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; margin-top: 8px; resize: vertical; }
 
-/* status filter chips */
-#filters { display: flex; gap: 4px; }
-.chip { font: inherit; font-size: 11px; border: 1px solid var(--line); background: #fff; color: var(--muted); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
-.chip.off { opacity: .45; text-decoration: line-through; }
-.chip[data-status="idea"].on { border-color: var(--idea); color: var(--idea); }
-.chip[data-status="in-progress"].on { border-color: var(--in-progress); color: var(--in-progress); }
-.chip[data-status="in-review"].on { border-color: var(--in-review); color: var(--in-review); }
-.chip[data-status="approved"].on { border-color: var(--approved); color: var(--approved); }
+/* status menu (opens from the chip on a frame's title bar) */
+#status-menu { position: fixed; z-index: 60; background: #fff; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 4px; display: flex; flex-direction: column; min-width: 130px; }
+#status-menu button { font: inherit; font-size: 12px; display: flex; align-items: center; gap: 8px; border: 0; background: none; text-align: left; padding: 6px 10px; border-radius: 6px; cursor: pointer; color: var(--ink); }
+#status-menu button:hover { background: #f3f4f6; }
+#status-menu button.cur { font-weight: 700; }
 #overview-toggle { position: relative; }
 #overview-count { color: #fff; background: var(--accent); border-radius: 999px; padding: 0 6px; font-size: 10px; }
 
 /* canvas */
 #canvas { grid-area: canvas; position: relative; overflow: hidden; cursor: grab; }
-.node.dim { opacity: .12; filter: grayscale(1); pointer-events: none; }
 .node.mod-hidden { display: none; }
 body.mode-place-label #canvas { cursor: crosshair; }
 
@@ -132,7 +128,8 @@ body.space-pan #edges .hit { pointer-events: none; }
 .node.st-in-review { border-color: var(--in-review); }
 .node.st-approved { border-color: var(--approved); }
 .node.selected { outline: 3px solid var(--accent); outline-offset: 2px; }
-.node-status { font-size: 11px; font-weight: 600; border: 1px solid; border-radius: 999px; padding: 1px 9px; white-space: nowrap; }
+.node-status { font-size: 11px; font-weight: 600; border: 1px solid; border-radius: 999px; padding: 1px 9px; white-space: nowrap; cursor: pointer; }
+.node-status:hover { filter: brightness(.92); }
 .node.st-idea .node-status { color: var(--idea); border-color: var(--idea); background: #f3f4f6; }
 .node.st-in-progress .node-status { color: var(--in-progress); border-color: var(--in-progress); background: #fffbeb; }
 .node.st-in-review .node-status { color: var(--in-review); border-color: var(--in-review); background: #eff6ff; }

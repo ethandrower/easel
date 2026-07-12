@@ -22,7 +22,7 @@ Also: `F` fit · `+`/`-` or **⌘/Ctrl `+`/`-`/`0`** zoom (the canvas, not the b
 - **`T heading`** — click the button, then click the canvas to drop a big section heading (Figma-style). Enter commits; drag to move; hover → × to delete.
 - **`🗒 note`** — same flow, but drops a post-it note for written annotations (e.g. instructions for engineers next to a screen). ⌘/Ctrl+Enter or click-away commits; notes support multiple lines.
 - Labels live in `design-canvas/labels.json` and remember which module backdrop they sit in, so they follow it when you isolate a module.
-- Every screen's frame is **border-colored by its status** (gray idea, amber in-progress, blue in-review, green approved), with a status chip in the title bar — approval state reads at a glance, and the toolbar chips still filter.
+- Every screen's frame is **border-colored by its status** (gray idea, amber in-progress, blue in-review, green approved), with a status chip in the title bar — approval state reads at a glance, and **clicking the chip** changes the status right on the frame.
 
 ## Creating views
 
@@ -60,7 +60,7 @@ Wired/derived edges are edited by changing the HTML (Easel tells you when you cl
 - Press `C` (or the 💬 tool), then click any element on any view — a comment pins to that element with rich context (selector, tag, current markup, on-screen box). Works on the canvas *and* in full-screen focus.
 - **Click a pin** to read the comment, then **Resolve** or **Delete**.
 - **☰ comments** (toolbar) lists every open comment across the whole canvas; click one to jump to it.
-- Set a view's **status** (idea → in-progress → in-review → approved) in the rail; filter by status with the toolbar chips.
+- Set a view's **status** (idea → in-progress → in-review → approved) by clicking the chip on its title bar, or from the rail.
 
 ## Handing feedback to Claude Code
 

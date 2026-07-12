@@ -109,7 +109,11 @@
       const dot = el('span', 'node-dot'); dot.style.background = statusColor(d.status);
       head.append(dot, el('span', 'node-title', d.title));
       const right = el('div', 'node-head-right');
-      right.append(el('span', 'node-status', d.status));
+      const stChip = el('span', 'node-status', d.status);
+      stChip.title = 'Change status';
+      stChip.addEventListener('mousedown', (e) => e.stopPropagation());
+      stChip.addEventListener('click', (e) => { e.stopPropagation(); openStatusMenu(path, e.clientX, e.clientY); });
+      right.append(stChip);
       const open = (n.cache.comments.comments || []).filter((c) => c.status !== 'resolved').length;
       if (open) right.append(el('span', 'node-badge', open + '💬'));
       const expand = el('span', 'node-expand', '⛶'); expand.title = 'Open full screen';
@@ -143,7 +147,6 @@
     drawEdges();
     // don't rebuild the labels layer out from under an active label editor
     if (!document.querySelector('.label-edit')) renderLabels();
-    applyFilter();
     drawMinimap();
     updateOverviewCount();
     applyTransform();   // also runs updateViewports()
@@ -248,19 +251,31 @@
     }
   }
 
-  // --- status filter --------------------------------------------------------
-  const activeStatus = new Set(['idea', 'in-progress', 'in-review', 'approved']);
-  function applyFilter() {
-    for (const [, n] of nodes) n.dom && n.dom.classList.toggle('dim', !activeStatus.has(n.data.status));
+  // --- status: click the chip on a frame's title bar to flip it -------------
+  const STATUSES = ['idea', 'in-progress', 'in-review', 'approved'];
+  function closeStatusMenu() { const m = $('status-menu'); if (m) m.remove(); }
+  function openStatusMenu(path, x, y) {
+    closeStatusMenu();
+    const n = nodes.get(path);
+    const menu = el('div'); menu.id = 'status-menu';
+    for (const s of STATUSES) {
+      const b = el('button', s === n.data.status ? 'cur' : null);
+      const dot = el('span', 'node-dot'); dot.style.background = statusColor(s);
+      b.append(dot, document.createTextNode(s));
+      b.addEventListener('click', async () => {
+        closeStatusMenu();
+        n.data.status = s; n.cache.view.status = s;
+        await saveView(path); render();
+        if (selected === path) select(path);
+      });
+      menu.append(b);
+    }
+    menu.style.left = Math.min(x, window.innerWidth - 160) + 'px';
+    menu.style.top = Math.min(y + 8, window.innerHeight - 150) + 'px';
+    document.body.append(menu);
   }
-  [...document.querySelectorAll('.chip')].forEach((chip) => {
-    chip.classList.add('on');
-    chip.addEventListener('click', () => {
-      const s = chip.dataset.status;
-      if (activeStatus.has(s)) { activeStatus.delete(s); chip.classList.remove('on'); chip.classList.add('off'); }
-      else { activeStatus.add(s); chip.classList.add('on'); chip.classList.remove('off'); }
-      applyFilter();
-    });
+  document.addEventListener('mousedown', (e) => {
+    if (!e.target.closest('#status-menu') && !e.target.closest('.node-status')) closeStatusMenu();
   });
 
   // --- comment overview drawer ---------------------------------------------
