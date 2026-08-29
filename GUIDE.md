@@ -39,6 +39,33 @@ New views scaffold from `design-canvas/_template.html`. Give buttons/links stabl
 
 Manage views from the rail: **rename** (folder id), **duplicate** (great for variants), **delete**. Use **⤢ arrange** to auto-lay-out the whole graph by its links when things get messy.
 
+## Sketch first — scoping before designing
+
+When a module is still an idea, don't design screens yet — sketch them. Press **`S`** (or the **✎ sketch** button), click the canvas where the screen should go, name it, and start typing. A sketch is a view with **no HTML at all**: its notes live in `view.json` and render as a low-fi wireframe in a real screen's footprint.
+
+Notes are plain text with three conventions:
+
+```
+A line about what this screen is for.
+
+## Toolbar
+- device switcher
+- "check copy" button
+
+## Table
+- one row per claim: grade, trend, owner
+
+? per-device or portfolio-wide by default?
+```
+
+`##` opens a region of the screen, `-` lists what lives in it, `?` is an open question (shown in an amber box). Click a sketch to edit it in place — ⌘/Ctrl+Enter or click away saves, Esc cancels.
+
+Everything else already works on sketches: drag them into flows with the ↗ handle, drop headings and post-its around them, flip their status, isolate their module, `⤢ arrange`. Comments can't be pinned to a sketch (there are no elements yet) — put that feedback in the notes.
+
+When a sketch is ready to become a real screen, select it and hit **⇧ Promote to design** in the rail. Easel scaffolds `index.html` from the template, keeps the notes as the view's `brief`, and opens the Claude prompt with those notes as the spec — copy, paste into Claude Code, and the frame fills in right where the sketch was. Links you drew survive.
+
+By hand / Claude Code: a sketch is just a view folder with `view.json` (`{ title, status, position, links, "sketch": { "text": "..." } }`) and `comments.json`, and no `index.html`.
+
 ## Edges — the three kinds of link
 
 Easel distinguishes *documentation* links (just a drawn arrow) from *real* navigation (the prototype actually goes there). Both show as arrows; real ones are drawn solid/accent, documentation ones gray.

@@ -93,6 +93,12 @@ async function copyDir(src, dst) {
 
 async function rmDir(p) { await fs.rm(p, { recursive: true, force: true }); }
 
+// A fresh view's HTML: the canvas's _template.html with the title filled in.
+async function scaffoldHtml(canvasRoot, title) {
+  const tpl = await fs.readFile(path.join(canvasRoot, '_template.html'), 'utf8').catch(() => '<!doctype html><html><head><script src="../../../shared/ds.js"></script></head><body><main class="p-6"><h1>__TITLE__</h1></main></body></html>');
+  return tpl.replace(/__TITLE__/g, title);
+}
+
 // Relative href from one view's folder to another's index.html.
 function relHref(fromPath, toPath) {
   const [fm, fv] = fromPath.split('/'), [tm, tv] = toPath.split('/');
@@ -147,6 +153,9 @@ async function scanTree(canvasRoot) {
         position: vjson.position || null,
         links: Array.isArray(vjson.links) ? vjson.links : [],
         derivedLinks: deriveLinks(viewDir, rel),
+        // a view with no index.html is a rough sketch (notes in view.json)
+        // until it's promoted; the viewer renders those natively, no iframe
+        kind: exists(path.join(viewDir, 'index.html')) ? 'design' : 'sketch',
         url: `/canvas/modules/${mod}/${view}/index.html`,
         openComments: (cjson.comments || []).filter((c) => c.status !== 'resolved').length,
         totalComments: (cjson.comments || []).length,
@@ -277,8 +286,10 @@ export function startServer({ canvasRoot, viewerRoot, port = 4321 }) {
     }
 
     // Insert a new view: scaffold from _template.html, wire into the graph.
+    // With `sketch: true` it scaffolds no HTML at all: the view is a rough
+    // sketch whose notes live in view.json until it's promoted to a design.
     if (p === '/api/insert' && req.method === 'POST') {
-      const { module: mod, title, parent, position } = await readBody(req);
+      const { module: mod, title, parent, position, sketch, text } = await readBody(req);
       if (!mod || !title) return json(res, 400, { error: 'module and title required' });
       const modDir = path.join(canvasRoot, 'modules', slug(mod));
       await fs.mkdir(modDir, { recursive: true });
@@ -289,9 +300,7 @@ export function startServer({ canvasRoot, viewerRoot, port = 4321 }) {
       while (exists(path.join(modDir, id))) id = `${slug(title)}-${++n}`;
       const viewDir = path.join(modDir, id);
       await fs.mkdir(viewDir, { recursive: true });
-      let tpl = await fs.readFile(path.join(canvasRoot, '_template.html'), 'utf8').catch(() => '<!doctype html><html><head><script src="../../../shared/ds.js"></script></head><body><main class="p-6"><h1>__TITLE__</h1></main></body></html>');
-      tpl = tpl.replace(/__TITLE__/g, title);
-      await fs.writeFile(path.join(viewDir, 'index.html'), tpl);
+      if (!sketch) await fs.writeFile(path.join(viewDir, 'index.html'), await scaffoldHtml(canvasRoot, title));
       // place below the parent (if any); otherwise at the client-supplied spot
       // (the viewer sends the current viewport center) or a default.
       const parentDir = parent ? safeJoin(path.join(canvasRoot, 'modules'), parent) : null;
@@ -308,7 +317,9 @@ export function startServer({ canvasRoot, viewerRoot, port = 4321 }) {
       while (guard++ < 400 && taken.some((t) => Math.abs(t.x - pos.x) < NODE_W && Math.abs(t.y - pos.y) < NODE_H)) {
         pos = { x: pos.x, y: pos.y + STEP };
       }
-      await writeJSON(path.join(viewDir, 'view.json'), { title, status: 'idea', position: pos, links: [] });
+      const vjson = { title, status: 'idea', position: pos, links: [] };
+      if (sketch) vjson.sketch = { text: typeof text === 'string' ? text : '' };
+      await writeJSON(path.join(viewDir, 'view.json'), vjson);
       await writeJSON(path.join(viewDir, 'comments.json'), { comments: [] });
       if (pv) {
         pv.links = pv.links || [];
@@ -316,6 +327,20 @@ export function startServer({ canvasRoot, viewerRoot, port = 4321 }) {
         await writeJSON(path.join(parentDir, 'view.json'), pv);
       }
       return json(res, 200, { ok: true, path: `${slug(mod)}/${id}` });
+    }
+
+    // Promote a sketch to a design: scaffold index.html from the template and
+    // keep the sketch notes as the view's `brief` (the Claude prompt uses it).
+    if (p === '/api/promote' && req.method === 'POST') {
+      const { path: rel } = await readBody(req);
+      const dir = safeJoin(path.join(canvasRoot, 'modules'), rel || '');
+      if (!dir || !exists(dir) || !exists(path.join(dir, 'view.json'))) return json(res, 400, { error: 'bad path' });
+      if (exists(path.join(dir, 'index.html'))) return json(res, 409, { error: 'already a design' });
+      const v = await readJSON(path.join(dir, 'view.json'), {});
+      await fs.writeFile(path.join(dir, 'index.html'), await scaffoldHtml(canvasRoot, v.title || rel.split('/').pop()));
+      if (v.sketch) { if (v.sketch.text) v.brief = v.sketch.text; delete v.sketch; }
+      await writeJSON(path.join(dir, 'view.json'), v);
+      return json(res, 200, { ok: true, path: rel });
     }
 
     // Delete a view: remove its folder and drop every edge pointing at it.

@@ -148,6 +148,31 @@ body.space-pan #edges .hit { pointer-events: none; }
 .ph-title { font-size: 40px; font-weight: 700; color: #d1d5db; padding: 0 24px; text-align: center; }
 .node.pinning .node-frame { outline: 3px dashed var(--accent); outline-offset: -3px; }
 
+/* sketch frames: rough notes rendered natively (no iframe) in a design's footprint.
+   Big type on purpose — they're read zoomed out, next to real screens. */
+.node.sketch { border-style: dashed; background: #fffdf7; }
+.node.sketch .node-head { background: #fdf9ec; }
+.sketch-body { position: relative; height: var(--frame-h); overflow: auto; box-sizing: border-box; padding: 28px 32px; border-radius: 0 0 10px 10px; background: #fffdf7; cursor: text; color: #3d4552; font-size: 20px; line-height: 1.45; }
+.sketch-body.editing { padding: 0; overflow: hidden; }
+.sketch-empty { color: #a3a9b4; font-size: 26px; line-height: 1.4; max-width: 900px; }
+.sketch-blurb { font-size: 26px; color: #4b5563; margin: 0 0 20px; }
+.sketch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.sketch-region { border: 3px dashed #b8bec8; border-radius: 12px; padding: 14px 20px; background: rgba(255,255,255,.7); min-width: 0; }
+.sketch-region.wide { grid-column: span 2; }
+.sketch-region h4 { margin: 0 0 6px; font-size: 22px; font-weight: 700; color: #374151; }
+.sketch-region ul, .sketch-q ul { margin: 0; padding-left: 26px; }
+.sketch-region li, .sketch-q li { margin: 3px 0; overflow-wrap: anywhere; }
+.sketch-q { margin-top: 18px; border-left: 6px solid #d97706; background: #fef3c7; padding: 12px 18px; border-radius: 0 10px 10px 0; color: #78350f; }
+.sketch-q h4 { margin: 0 0 4px; font-size: 20px; color: #92400e; }
+.sketch-edit { display: block; width: 100%; height: 100%; box-sizing: border-box; font: inherit; font-size: 20px; line-height: 1.45; color: var(--ink); border: 0; outline: 3px solid var(--accent); outline-offset: -3px; background: #fffdf7; padding: 24px 28px; resize: none; }
+.sketch-hint { position: absolute; right: 14px; bottom: 10px; font-size: 13px; color: var(--muted); pointer-events: none; }
+#add-sketch { border-color: #d97706; color: #b45309; font-weight: 600; }
+#sketch-form { position: fixed; z-index: 55; width: 300px; background: #fff; border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.25); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+#sketch-form[hidden] { display: none; }
+#sketch-form h3 { margin: 0; font-size: 13px; }
+#sketch-form label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+#sketch-form input { font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+
 /* comment pins overlaid on a node */
 .pin { position: absolute; z-index: 5; width: 22px; height: 22px; transform: translate(-50%, -100%); background: var(--accent); color: #fff; border-radius: 50% 50% 50% 0; display: grid; place-items: center; font-size: 11px; font-weight: 700; box-shadow: 0 2px 6px rgba(0,0,0,.3); cursor: pointer; }
 .pin.resolved { background: var(--approved); }

@@ -41,6 +41,8 @@
   let labels = [];                  // canvas text labels (headings / post-its), from labels.json
   let activeModule = null;          // module isolation: null = show all modules
   let pendingLabel = null;          // 'heading' | 'note' while waiting for a placement click
+  let pendingSketch = false;        // waiting for a click to place a new sketch frame
+  let sketchEdit = null;            // { path, value, sel } while a sketch is being edited in place (survives re-render)
   const inActiveModule = (n) => !activeModule || n.data._module.id === activeModule;
 
   const surface = $('surface');
@@ -116,20 +118,30 @@
       right.append(stChip);
       const open = (n.cache.comments.comments || []).filter((c) => c.status !== 'resolved').length;
       if (open) right.append(el('span', 'node-badge', open + '💬'));
-      const expand = el('span', 'node-expand', '⛶'); expand.title = 'Open full screen';
-      expand.addEventListener('mousedown', (e) => { e.stopPropagation(); openFocus(path); });
+      const isSketch = d.kind === 'sketch';
+      const expand = el('span', 'node-expand', isSketch ? '✎' : '⛶'); expand.title = isSketch ? 'Edit sketch' : 'Open full screen';
+      expand.addEventListener('mousedown', (e) => { e.stopPropagation(); if (isSketch) editSketch(path); else openFocus(path); });
       right.append(expand);
       head.append(right);
       node.append(head);
 
-      const frame = el('div', 'node-frame');
-      const ph = el('div', 'placeholder');
-      ph.append(el('div', 'ph-title', d.title));
-      frame.append(ph);
-      const catchEl = el('div', 'node-catch');
-      catchEl.addEventListener('click', (e) => onCatchClick(e, path, frame));
-      frame.append(catchEl);
-      node.append(frame);
+      let frame = null;
+      if (isSketch) {
+        // a sketch has no HTML: render its notes natively in the same footprint
+        node.classList.add('sketch');
+        const body = el('div', 'sketch-body');
+        renderSketchBody(path, body);
+        node.append(body);
+      } else {
+        frame = el('div', 'node-frame');
+        const ph = el('div', 'placeholder');
+        ph.append(el('div', 'ph-title', d.title));
+        frame.append(ph);
+        const catchEl = el('div', 'node-catch');
+        catchEl.addEventListener('click', (e) => onCatchClick(e, path, frame));
+        frame.append(catchEl);
+        node.append(frame);
+      }
 
       const handle = el('div', 'link-handle', '↗');
       handle.title = 'Drag to another view to link';
@@ -154,7 +166,7 @@
 
   // --- iframe virtualization: only mount prototypes near the viewport --------
   function mountIframe(n) {
-    if (n.mounted) return;
+    if (n.mounted || !n.frame) return;   // sketches have no frame to mount
     const iframe = document.createElement('iframe');
     iframe.src = n.data.url;
     iframe.addEventListener('load', () => { renderPins(n.data.id); armHotspotFlash(iframe); });
@@ -399,6 +411,13 @@
     $('v-title').value = n.data.title;
     $('v-status').value = n.data.status;
     $('v-module').textContent = n.data._module.title;
+    // sketches edit in place and promote instead of opening full screen / prompting;
+    // they have no elements to pin comments to
+    const isSketch = n.data.kind === 'sketch';
+    $('act-focus').textContent = isSketch ? '✎ Edit sketch' : '⛶ Open full screen';
+    $('open-prompt').textContent = isSketch ? '⇧ Promote to design' : '⧉ Prompt for Claude';
+    $('open-prompt').title = isSketch ? 'Scaffold the HTML for this sketch and open a Claude prompt seeded with its notes' : 'Open an editable Claude prompt for this view (design context + open comments)';
+    $('add-comment').hidden = isSketch;
     // rebuild the id row fresh (the inline rename UI may have replaced its contents)
     const idWrap = document.querySelector('.v-id');
     if (idWrap) {
@@ -539,6 +558,7 @@
   canvas.addEventListener('mousedown', (e) => {
     // preventDefault so the click's default focus shift can't blur the label
     // editor that placeLabel is about to open
+    if (pendingSketch) { e.preventDefault(); placeSketch(e); return; }
     if (pendingLabel) { e.preventDefault(); placeLabel(e); return; }
     if (e.target.closest('.node') || e.target.closest('.label')) return;
     const start = { mx: e.clientX, my: e.clientY, ox: view.x, oy: view.y };
@@ -744,6 +764,7 @@
   // area, all in one editable modal (see composePrompt / openPrompt below).
   $('open-prompt').addEventListener('click', () => {
     if (!selected) return;
+    if (nodes.get(selected).data.kind === 'sketch') { promoteSketch(selected); return; }
     openPrompt(composePrompt(selected), nodes.get(selected).data.title);
   });
   $('copy-all').addEventListener('click', () => {
@@ -758,6 +779,7 @@
   function openFocus(path) {
     const n = nodes.get(path);
     if (!n) return;
+    if (n.data.kind === 'sketch') { editSketch(path); return; }   // sketches edit in place instead
     select(path);
     focusPath = path;
     $('focus-title').textContent = `${n.data.title}  ·  ${path}`;
@@ -1152,6 +1174,151 @@
   $('add-heading').addEventListener('click', () => armLabel('heading'));
   $('add-note').addEventListener('click', () => armLabel('note'));
 
+  // --- sketch mode: rough frames with no HTML, edited right on the canvas ----
+  // A sketch is a view whose notes live in view.json (`sketch.text`) and which
+  // has no index.html yet. The text is markdown-ish: a leading paragraph is the
+  // blurb, "## Title" opens a region of the screen, "- item" lists what lives
+  // there, "? question" is an open scoping question. Promoting the sketch
+  // scaffolds index.html and hands the notes to the Claude prompt as the brief.
+  function parseSketch(text) {
+    const out = { blurb: [], regions: [], questions: [] };
+    let cur = null;
+    for (const raw of String(text || '').split('\n')) {
+      const line = raw.trim();
+      if (!line) continue;
+      let m;
+      if ((m = line.match(/^#{1,3}\s+(.*)$/))) { cur = { title: m[1], items: [] }; out.regions.push(cur); }
+      else if ((m = line.match(/^\?\s*(.*)$/))) out.questions.push(m[1]);
+      else if ((m = line.match(/^[-*•]\s+(.*)$/))) { if (!cur) { cur = { title: '', items: [] }; out.regions.push(cur); } cur.items.push(m[1]); }
+      else if (cur) cur.items.push(line);
+      else out.blurb.push(line);
+    }
+    return out;
+  }
+  function renderSketchBody(path, body) {
+    const n = nodes.get(path);
+    body.className = 'sketch-body';
+    body.innerHTML = '';
+    if (sketchEdit && sketchEdit.path === path) { mountSketchEditor(path, body); return; }
+    const text = (n.cache.view.sketch && n.cache.view.sketch.text) || '';
+    const s = parseSketch(text);
+    if (!text.trim()) body.append(el('div', 'sketch-empty', 'Click to jot down what this screen is: a line about it, then "## Region" headings with "- what lives there" bullets and "? open questions".'));
+    for (const b of s.blurb) body.append(el('p', 'sketch-blurb', b));
+    if (s.regions.length) {
+      const grid = el('div', 'sketch-grid');
+      for (const r of s.regions) {
+        const box = el('section', 'sketch-region');
+        if (r.items.length >= 5 || s.regions.length === 1) box.classList.add('wide');
+        if (r.title) box.append(el('h4', null, r.title));
+        const ul = el('ul');
+        for (const it of r.items) ul.append(el('li', null, it));
+        box.append(ul);
+        grid.append(box);
+      }
+      body.append(grid);
+    }
+    if (s.questions.length) {
+      const q = el('div', 'sketch-q');
+      q.append(el('h4', null, 'Open questions'));
+      const ul = el('ul');
+      for (const it of s.questions) ul.append(el('li', null, it));
+      q.append(ul);
+      body.append(q);
+    }
+    body.onclick = () => {
+      if (tool !== 'pointer') { toast('Sketches have no elements to pin — promote it to a design first'); return; }
+      editSketch(path);
+    };
+    // long sketches scroll inside the frame; short ones let the wheel zoom the canvas
+    body.onwheel = (e) => { if (body.scrollHeight > body.clientHeight + 2) e.stopPropagation(); };
+  }
+  function mountSketchEditor(path, body) {
+    body.classList.add('editing');
+    const ta = el('textarea', 'sketch-edit');
+    ta.value = sketchEdit.value;
+    ta.placeholder = 'One line about this screen\n\n## Region\n- what lives here\n\n? open question';
+    body.append(ta, el('div', 'sketch-hint', '⌘/Ctrl+Enter or click away to save · Esc to cancel'));
+    const sel = sketchEdit.sel;
+    // focus after the triggering click's default handling so it can't be blurred at once
+    setTimeout(() => { ta.focus(); if (sel != null) ta.setSelectionRange(sel, sel); }, 0);
+    let done = false;
+    const commit = async (cancel) => {
+      if (done) return; done = true;
+      const n = nodes.get(path);
+      sketchEdit = null;
+      if (!cancel && n) {
+        n.cache.view.sketch = { text: ta.value.replace(/\s+$/, '') };
+        await saveView(path);
+      }
+      if (n && n.dom) { const b = n.dom.querySelector('.sketch-body'); if (b) renderSketchBody(path, b); }
+    };
+    ta.addEventListener('input', () => { if (sketchEdit) { sketchEdit.value = ta.value; sketchEdit.sel = ta.selectionStart; } });
+    ta.addEventListener('mousedown', (e) => e.stopPropagation());
+    ta.addEventListener('wheel', (e) => e.stopPropagation());
+    ta.addEventListener('blur', () => commit(false));
+    ta.addEventListener('keydown', (ev) => {
+      ev.stopPropagation();
+      if (ev.key === 'Escape') { ev.preventDefault(); commit(true); }
+      if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); commit(false); }
+    });
+  }
+  function editSketch(path) {
+    const n = nodes.get(path);
+    if (!n || !n.dom || n.data.kind !== 'sketch') return;
+    if (sketchEdit && sketchEdit.path === path) return;
+    select(path);
+    sketchEdit = { path, value: (n.cache.view.sketch && n.cache.view.sketch.text) || '', sel: null };
+    const body = n.dom.querySelector('.sketch-body');
+    if (body) renderSketchBody(path, body);
+  }
+  // Promote: scaffold the HTML, then open the Claude prompt seeded with the notes.
+  async function promoteSketch(path) {
+    const n = nodes.get(path);
+    if (!n) return;
+    const title = n.data.title;
+    const res = await post('/api/promote', { path });
+    if (!res.ok) { toast(res.error || 'Promote failed'); return; }
+    await reloadTree();
+    if (nodes.has(path)) { select(path); openPrompt(composePrompt(path, 'Build this screen from the sketch notes above.'), title); }
+    toast('Promoted to a design — paste the prompt into Claude Code');
+  }
+  // Quick-add: click the canvas where the sketch goes, name it, start typing.
+  function armSketch() {
+    pendingSketch = true; pendingLabel = null;
+    document.body.classList.add('mode-place-label');
+    toast('Click the canvas where the sketch should go');
+  }
+  function closeSketchForm() { $('sketch-form').hidden = true; }
+  function placeSketch(e) {
+    const w = canvasPoint(e);
+    pendingSketch = false;
+    document.body.classList.remove('mode-place-label');
+    const form = $('sketch-form');
+    form.style.left = Math.min(e.clientX, window.innerWidth - 320) + 'px';
+    form.style.top = Math.min(e.clientY, window.innerHeight - 190) + 'px';
+    form._pos = { x: w.x, y: w.y };
+    $('sketch-module').value = activeModule || moduleAt(w.x, w.y) || '';
+    $('sketch-title').value = '';
+    form.hidden = false;
+    ($('sketch-module').value ? $('sketch-title') : $('sketch-module')).focus();
+  }
+  async function createSketch() {
+    const module = $('sketch-module').value.trim(), title = $('sketch-title').value.trim();
+    if (!module || !title) { toast('Module and title required'); return; }
+    const position = $('sketch-form')._pos || { x: 80, y: 80 };
+    closeSketchForm();
+    const res = await post('/api/insert', { module, title, sketch: true, position });
+    if (!res.ok) { toast(res.error || 'Create failed'); return; }
+    await reloadTree();
+    if (nodes.has(res.path)) editSketch(res.path);
+  }
+  $('add-sketch').addEventListener('click', armSketch);
+  $('sketch-create').addEventListener('click', createSketch);
+  $('sketch-cancel').addEventListener('click', closeSketchForm);
+  for (const id of ['sketch-module', 'sketch-title']) {
+    $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') createSketch(); if (e.key === 'Escape') closeSketchForm(); });
+  }
+
   // --- module switcher: view one module at a time ----------------------------
   function fillModuleFilter(tree) {
     const sel = $('module-filter');
@@ -1160,6 +1327,9 @@
     const all = el('option', null, 'all modules'); all.value = '';
     sel.append(all);
     for (const m of tree.modules) { const o = el('option', null, m.title); o.value = m.id; sel.append(o); }
+    // the same module ids feed the quick-sketch form's autocomplete
+    const dl = $('module-list');
+    if (dl) { dl.innerHTML = ''; for (const m of tree.modules) { const o = el('option'); o.value = m.id; dl.append(o); } }
     sel.value = [...sel.options].some((o) => o.value === cur) ? cur : '';
     activeModule = sel.value || null;
   }
@@ -1228,6 +1398,13 @@
     L.push('- Give buttons and links stable ids so they can be wired to other screens.');
     if (links.length) L.push(`- This view links to: ${links.join(', ')} (wire buttons with data-easel-nav where relevant).`);
     if (sibs.length) L.push(`- Sibling screens in this module (match their visual language): ${sibs.join(', ')}.`);
+    // a promoted sketch carries its notes as the brief — that's the spec for the screen
+    const brief = n.cache.view.brief;
+    if (brief && String(brief).trim()) {
+      L.push('');
+      L.push('Sketch notes — this screen was scoped as a rough sketch; build it from these notes ("##" = a region of the screen, "-" = what lives in it, "?" = an open question: pick the sensible answer and say what you chose):');
+      String(brief).split('\n').forEach((ln) => L.push('  ' + ln));
+    }
     if (open.length) {
       L.push('');
       L.push(`Open feedback to address (${open.length}) — edit the element at each selector, then set that comment's "status" to "resolved" in design-canvas/modules/${path}/comments.json:`);
@@ -1296,7 +1473,8 @@
     if (e.key === 'v' || e.key === 'V') setTool('pointer');
     if (e.key === 'c' || e.key === 'C') setTool('comment');
     if (e.key === 'l' || e.key === 'L') setTool('link');
-    if (e.key === 'Escape') { $('insert-form').hidden = true; $('prompt-panel').hidden = true; $('edge-pop').hidden = true; $('composer').hidden = true; $('drop').hidden = true; pendingLabel = null; document.body.classList.remove('mode-place-label'); closeFocus(); setTool('pointer'); }
+    if (e.key === 's' || e.key === 'S') armSketch();
+    if (e.key === 'Escape') { $('insert-form').hidden = true; $('prompt-panel').hidden = true; $('edge-pop').hidden = true; $('composer').hidden = true; $('drop').hidden = true; pendingLabel = null; pendingSketch = false; closeSketchForm(); document.body.classList.remove('mode-place-label'); closeFocus(); setTool('pointer'); }
     if (e.key === '=' || e.key === '+') zoomBy(1.2);
     if (e.key === '-') zoomBy(1 / 1.2);
   });

@@ -28,6 +28,7 @@
         <button id="zoom-in" title="Zoom in">+</button>
         <input id="search" type="search" placeholder="jump to view…" autocomplete="off" />
         <button id="copy-all" title="Open an editable prompt to resolve every open comment">⧉ resolve all</button>
+        <button id="add-sketch" title="Drop a rough sketch frame: notes only, no HTML — promote it to a design later (S)">✎ sketch</button>
         <button id="add-view" title="Insert a new view">+ view</button>
       </div>
     </header>
@@ -111,6 +112,18 @@
       </div>
       <p class="insert-hint">If you describe it, a Claude design prompt is copied on create — paste it into Claude Code.</p>
     </div>
+
+    <!-- quick-sketch popover: opens where you clicked on the canvas -->
+    <div id="sketch-form" hidden>
+      <h3>New sketch</h3>
+      <label>Module <input id="sketch-module" list="module-list" placeholder="tasks" autocomplete="off" /></label>
+      <label>Title <input id="sketch-title" placeholder="Bulk actions" autocomplete="off" /></label>
+      <div class="insert-actions">
+        <button id="sketch-cancel">Cancel</button>
+        <button id="sketch-create" class="primary">Create</button>
+      </div>
+    </div>
+    <datalist id="module-list"></datalist>
 
     <div id="prompt-panel" hidden>
       <h3>Prompt · <span id="prompt-title"></span></h3>
