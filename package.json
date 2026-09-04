@@ -8,7 +8,8 @@
   },
   "scripts": {
     "start": "node bin/cli.mjs serve",
-    "demo": "node bin/cli.mjs serve --canvas templates/design-canvas"
+    "demo": "node bin/cli.mjs serve --canvas templates/design-canvas",
+    "test": "node --test --test-force-exit test/*.test.mjs"
   },
   "files": [
     "bin",

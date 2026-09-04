@@ -53,6 +53,78 @@ async function readJSON(file, fallback) {
 const writeJSON = (file, data) => fs.writeFile(file, JSON.stringify(data, null, 2) + '\n');
 const exists = (p) => fss.existsSync(p);
 
+// List every view directory as { path, dir } across all modules.
+async function allViewDirs(canvasRoot) {
+  const modulesDir = path.join(canvasRoot, 'modules');
+  const out = [];
+  let mods = [];
+  try { mods = (await fs.readdir(modulesDir, { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name); }
+  catch { return out; }
+  for (const mod of mods) {
+    const modDir = path.join(modulesDir, mod);
+    for (const v of (await fs.readdir(modDir, { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name)) {
+      if (exists(path.join(modDir, v, 'view.json'))) out.push({ path: `${mod}/${v}`, dir: path.join(modDir, v) });
+    }
+  }
+  return out;
+}
+
+// Remove/rewrite edges that point at `oldPath` across every view.
+async function rewriteEdges(canvasRoot, oldPath, newPath /* null = delete */) {
+  for (const { dir } of await allViewDirs(canvasRoot)) {
+    const v = await readJSON(path.join(dir, 'view.json'), null);
+    if (!v || !Array.isArray(v.links)) continue;
+    const before = v.links.length;
+    v.links = newPath
+      ? v.links.map((l) => (l.to === oldPath ? { ...l, to: newPath } : l))
+      : v.links.filter((l) => l.to !== oldPath);
+    if (v.links.length !== before || newPath) await writeJSON(path.join(dir, 'view.json'), v);
+  }
+}
+
+async function copyDir(src, dst) {
+  await fs.mkdir(dst, { recursive: true });
+  for (const entry of await fs.readdir(src, { withFileTypes: true })) {
+    const s = path.join(src, entry.name), d = path.join(dst, entry.name);
+    if (entry.isDirectory()) await copyDir(s, d);
+    else await fs.copyFile(s, d);
+  }
+}
+
+async function rmDir(p) { await fs.rm(p, { recursive: true, force: true }); }
+
+// A fresh view's HTML: the canvas's _template.html with the title filled in.
+async function scaffoldHtml(canvasRoot, title) {
+  const tpl = await fs.readFile(path.join(canvasRoot, '_template.html'), 'utf8').catch(() => '<!doctype html><html><head><script src="../../../shared/ds.js"></script></head><body><main class="p-6"><h1>__TITLE__</h1></main></body></html>');
+  return tpl.replace(/__TITLE__/g, title);
+}
+
+// Relative href from one view's folder to another's index.html.
+function relHref(fromPath, toPath) {
+  const [fm, fv] = fromPath.split('/'), [tm, tv] = toPath.split('/');
+  return fm === tm ? `../${tv}/index.html` : `../../${tm}/${tv}/index.html`;
+}
+// Resolve a relative href (from a view) to the view path it lands in, or null.
+function resolveToView(fromRel, href) {
+  if (/^(https?:)?\/\//.test(href) || href.startsWith('#') || href.startsWith('mailto:')) return null;
+  const clean = href.split('#')[0].split('?')[0];
+  const full = path.posix.normalize(`modules/${fromRel}/${clean}`);
+  const m = full.match(/^modules\/([^/]+)\/([^/]+)(?:\/|$)/);
+  return m ? `${m[1]}/${m[2]}` : null;
+}
+// Derive real-navigation edges from a prototype's markup (data-easel-view / data-easel-nav / <a href>).
+function deriveLinks(viewDir, rel) {
+  let html;
+  try { html = fss.readFileSync(path.join(viewDir, 'index.html'), 'utf8'); } catch { return []; }
+  const seen = new Set(), out = [];
+  let m;
+  const reView = /data-easel-view=["']([^"']+)["']/g;
+  while ((m = reView.exec(html))) if (m[1] !== rel && !seen.has(m[1])) { seen.add(m[1]); out.push({ to: m[1] }); }
+  const reHref = /(?:data-easel-nav|href)=["']([^"'][^"']*)["']/g;
+  while ((m = reHref.exec(html))) { const t = resolveToView(rel, m[1]); if (t && t !== rel && !seen.has(t)) { seen.add(t); out.push({ to: t }); } }
+  return out;
+}
+
 // Walk modules/<module>/<view>/ and assemble the graph the viewer renders.
 async function scanTree(canvasRoot) {
   const modulesDir = path.join(canvasRoot, 'modules');
@@ -80,6 +152,11 @@ async function scanTree(canvasRoot) {
         status: vjson.status || 'idea',
         position: vjson.position || null,
         links: Array.isArray(vjson.links) ? vjson.links : [],
+        derivedLinks: deriveLinks(viewDir, rel),
+        // a view with no index.html is a rough sketch (notes in view.json)
+        // until it's promoted; the viewer renders those natively, no iframe
+        kind: exists(path.join(viewDir, 'index.html')) ? 'design' : 'sketch',
+        variant: vjson.variant || null,   // { of, label } when this is an iteration of another screen
         url: `/canvas/modules/${mod}/${view}/index.html`,
         openComments: (cjson.comments || []).filter((c) => c.status !== 'resolved').length,
         totalComments: (cjson.comments || []).length,
@@ -105,13 +182,43 @@ export function startServer({ canvasRoot, viewerRoot, port = 4321 }) {
     for (const res of sseClients) res.write(payload);
   };
   let debounce;
+  const onChange = (file) => {
+    if (!file || String(file).includes('.git')) return;
+    clearTimeout(debounce);
+    debounce = setTimeout(() => broadcast(String(file).replace(/\\/g, '/')), 60);
+  };
+  // Recursive fs.watch works on macOS/Windows; on Linux it throws — fall back to mtime polling.
   try {
-    fss.watch(canvasRoot, { recursive: true }, (_evt, file) => {
-      if (!file || String(file).includes('.git')) return;
-      clearTimeout(debounce);
-      debounce = setTimeout(() => broadcast(String(file).replace(/\\/g, '/')), 60);
-    });
-  } catch { /* recursive watch unsupported on some platforms; live reload simply off */ }
+    fss.watch(canvasRoot, { recursive: true }, (_evt, file) => onChange(file));
+  } catch {
+    const mtimes = new Map();
+    let primed = false;
+    const scan = async () => {
+      const seen = new Set();
+      const stack = [canvasRoot];
+      while (stack.length) {
+        const dir = stack.pop();
+        let entries;
+        try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { continue; }
+        for (const e of entries) {
+          if (e.name === '.git' || e.name === 'node_modules') continue;
+          const full = path.join(dir, e.name);
+          if (e.isDirectory()) { stack.push(full); continue; }
+          try {
+            const s = await fs.stat(full);
+            seen.add(full);
+            const prev = mtimes.get(full);
+            mtimes.set(full, s.mtimeMs);
+            if (primed && prev !== s.mtimeMs) onChange(e.name);
+          } catch { /* file vanished mid-scan */ }
+        }
+      }
+      for (const k of [...mtimes.keys()]) if (!seen.has(k)) { mtimes.delete(k); if (primed) onChange('deleted'); }
+      primed = true;
+    };
+    scan();
+    setInterval(scan, 800);
+  }
 
   const safeJoin = (root, rel) => {
     const p = path.join(root, rel);
@@ -168,9 +275,22 @@ export function startServer({ canvasRoot, viewerRoot, port = 4321 }) {
       return json(res, 200, { ok: true });
     }
 
+    // Canvas text labels (big headings + post-it notes) live in labels.json at
+    // the canvas root — the same file-as-truth pattern as everything else.
+    if (p === '/api/labels') {
+      const file = path.join(canvasRoot, 'labels.json');
+      if (req.method === 'GET') return json(res, 200, await readJSON(file, { labels: [] }));
+      if (req.method === 'POST') {
+        await writeJSON(file, await readBody(req));
+        return json(res, 200, { ok: true });
+      }
+    }
+
     // Insert a new view: scaffold from _template.html, wire into the graph.
+    // With `sketch: true` it scaffolds no HTML at all: the view is a rough
+    // sketch whose notes live in view.json until it's promoted to a design.
     if (p === '/api/insert' && req.method === 'POST') {
-      const { module: mod, title, parent, position } = await readBody(req);
+      const { module: mod, title, parent, position, sketch, text } = await readBody(req);
       if (!mod || !title) return json(res, 400, { error: 'module and title required' });
       const modDir = path.join(canvasRoot, 'modules', slug(mod));
       await fs.mkdir(modDir, { recursive: true });
@@ -181,24 +301,157 @@ export function startServer({ canvasRoot, viewerRoot, port = 4321 }) {
       while (exists(path.join(modDir, id))) id = `${slug(title)}-${++n}`;
       const viewDir = path.join(modDir, id);
       await fs.mkdir(viewDir, { recursive: true });
-      let tpl = await fs.readFile(path.join(canvasRoot, '_template.html'), 'utf8').catch(() => '<!doctype html><html><head><script src="../../../shared/ds.js"></script></head><body><main class="p-6"><h1>__TITLE__</h1></main></body></html>');
-      tpl = tpl.replace(/__TITLE__/g, title);
-      await fs.writeFile(path.join(viewDir, 'index.html'), tpl);
-      await writeJSON(path.join(viewDir, 'view.json'), { title, status: 'idea', position: position || { x: 80, y: 80 }, links: [] });
+      if (!sketch) await fs.writeFile(path.join(viewDir, 'index.html'), await scaffoldHtml(canvasRoot, title));
+      // place below the parent (if any); otherwise at the client-supplied spot
+      // (the viewer sends the current viewport center) or a default.
+      const parentDir = parent ? safeJoin(path.join(canvasRoot, 'modules'), parent) : null;
+      let pv = parentDir ? await readJSON(path.join(parentDir, 'view.json'), null) : null;
+      let pos = pv && pv.position ? { x: pv.position.x, y: pv.position.y + 900 } : (position || { x: 80, y: 80 });
+      // never drop a new view on top of an existing one — nudge down until clear
+      const taken = [];
+      for (const { dir: vd } of await allViewDirs(canvasRoot)) {
+        const vj = await readJSON(path.join(vd, 'view.json'), null);
+        if (vj && vj.position) taken.push(vj.position);
+      }
+      const NODE_W = 1200, NODE_H = 820, STEP = NODE_H + 180;
+      let guard = 0;
+      while (guard++ < 400 && taken.some((t) => Math.abs(t.x - pos.x) < NODE_W && Math.abs(t.y - pos.y) < NODE_H)) {
+        pos = { x: pos.x, y: pos.y + STEP };
+      }
+      const vjson = { title, status: 'idea', position: pos, links: [] };
+      if (sketch) vjson.sketch = { text: typeof text === 'string' ? text : '' };
+      await writeJSON(path.join(viewDir, 'view.json'), vjson);
       await writeJSON(path.join(viewDir, 'comments.json'), { comments: [] });
-      // link parent -> new view
-      if (parent) {
-        const parentDir = safeJoin(path.join(canvasRoot, 'modules'), parent);
-        if (parentDir) {
-          const pv = await readJSON(path.join(parentDir, 'view.json'), null);
-          if (pv) {
-            pv.links = pv.links || [];
-            pv.links.push({ to: `${slug(mod)}/${id}`, label: '' });
-            await writeJSON(path.join(parentDir, 'view.json'), pv);
-          }
-        }
+      if (pv) {
+        pv.links = pv.links || [];
+        pv.links.push({ to: `${slug(mod)}/${id}`, label: '' });
+        await writeJSON(path.join(parentDir, 'view.json'), pv);
       }
       return json(res, 200, { ok: true, path: `${slug(mod)}/${id}` });
+    }
+
+    // Promote a sketch to a design: scaffold index.html from the template and
+    // keep the sketch notes as the view's `brief` (the Claude prompt uses it).
+    if (p === '/api/promote' && req.method === 'POST') {
+      const { path: rel } = await readBody(req);
+      const dir = safeJoin(path.join(canvasRoot, 'modules'), rel || '');
+      if (!dir || !exists(dir) || !exists(path.join(dir, 'view.json'))) return json(res, 400, { error: 'bad path' });
+      if (exists(path.join(dir, 'index.html'))) return json(res, 409, { error: 'already a design' });
+      const v = await readJSON(path.join(dir, 'view.json'), {});
+      await fs.writeFile(path.join(dir, 'index.html'), await scaffoldHtml(canvasRoot, v.title || rel.split('/').pop()));
+      if (v.sketch) { if (v.sketch.text) v.notes = v.sketch.text; delete v.sketch; }   // the storyboard notes ride along
+      await writeJSON(path.join(dir, 'view.json'), v);
+      return json(res, 200, { ok: true, path: rel });
+    }
+
+    // Create a lettered iteration of a screen: a sibling copy tied back to its
+    // base view, so several design directions can hang off one storyboard slot.
+    if (p === '/api/variant' && req.method === 'POST') {
+      const { path: rel } = await readBody(req);
+      const dir = safeJoin(path.join(canvasRoot, 'modules'), rel || '');
+      if (!dir || !exists(dir)) return json(res, 400, { error: 'bad path' });
+      const src = await readJSON(path.join(dir, 'view.json'), {});
+      const baseRel = (src.variant && src.variant.of) || rel;   // iterating an iteration joins the same family
+      const [mod, baseView] = baseRel.split('/');
+      const modDir = path.join(canvasRoot, 'modules', mod);
+      const baseV = await readJSON(path.join(modDir, baseView, 'view.json'), {});
+      // next free letter across the family
+      const taken = new Set();
+      for (const v of (await fs.readdir(modDir, { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name)) {
+        const vj = await readJSON(path.join(modDir, v, 'view.json'), null);
+        if (vj && vj.variant && vj.variant.of === baseRel) taken.add(vj.variant.label);
+      }
+      let label = null;
+      for (const c of 'bcdefghijklmnopqrstuvwxyz') if (!taken.has(c)) { label = c; break; }
+      if (!label) return json(res, 400, { error: 'too many iterations' });
+      let id = `${baseView}-${label}`, n = 1;
+      while (exists(path.join(modDir, id))) id = `${baseView}-${label}-${++n}`;
+      const dst = path.join(modDir, id);
+      await copyDir(dir, dst);   // iterate from the screen you clicked (it may itself be an iteration)
+      const v = await readJSON(path.join(dst, 'view.json'), {});
+      const baseTitle = baseV.title || baseView;
+      v.title = `${baseTitle} · iteration ${label.toUpperCase()}`;
+      v.variant = { of: baseRel, label };
+      const basePos = baseV.position || { x: 80, y: 80 };
+      v.position = { x: basePos.x + taken.size * 1360, y: basePos.y + 1180 };
+      await writeJSON(path.join(dst, 'view.json'), v);
+      // tie it back with a labeled edge so the family reads on the graph
+      baseV.links = baseV.links || [];
+      const toPath = `${mod}/${id}`;
+      if (!baseV.links.some((l) => l.to === toPath)) baseV.links.push({ to: toPath, label: `iteration ${label.toUpperCase()}` });
+      await writeJSON(path.join(modDir, baseView, 'view.json'), baseV);
+      return json(res, 200, { ok: true, path: toPath, label });
+    }
+
+    // Delete a view: remove its folder and drop every edge pointing at it.
+    if (p === '/api/delete' && req.method === 'POST') {
+      const { path: rel } = await readBody(req);
+      const dir = safeJoin(path.join(canvasRoot, 'modules'), rel || '');
+      if (!dir || !exists(dir)) return json(res, 400, { error: 'bad path' });
+      await rmDir(dir);
+      await rewriteEdges(canvasRoot, rel, null);
+      return json(res, 200, { ok: true });
+    }
+
+    // Duplicate a view within its module (great for variants).
+    if (p === '/api/duplicate' && req.method === 'POST') {
+      const { path: rel } = await readBody(req);
+      const dir = safeJoin(path.join(canvasRoot, 'modules'), rel || '');
+      if (!dir || !exists(dir)) return json(res, 400, { error: 'bad path' });
+      const [mod, view] = rel.split('/');
+      const modDir = path.join(canvasRoot, 'modules', mod);
+      let id = `${view}-copy`, n = 1;
+      while (exists(path.join(modDir, id))) id = `${view}-copy-${++n}`;
+      const dst = path.join(modDir, id);
+      await copyDir(dir, dst);
+      const v = await readJSON(path.join(dst, 'view.json'), {});
+      v.title = (v.title || view) + ' copy';
+      v.position = { x: (v.position?.x || 80) + 80, y: (v.position?.y || 80) + 80 };
+      await writeJSON(path.join(dst, 'view.json'), v);
+      return json(res, 200, { ok: true, path: `${mod}/${id}` });
+    }
+
+    // Rename a view's folder id and repoint every edge that referenced it.
+    if (p === '/api/rename' && req.method === 'POST') {
+      const { path: rel, id: rawId } = await readBody(req);
+      const dir = safeJoin(path.join(canvasRoot, 'modules'), rel || '');
+      if (!dir || !exists(dir) || !rawId) return json(res, 400, { error: 'bad path' });
+      const [mod] = rel.split('/');
+      const id = slug(rawId);
+      const dst = path.join(canvasRoot, 'modules', mod, id);
+      if (exists(dst)) return json(res, 409, { error: 'id already exists' });
+      await fs.rename(dir, dst);
+      await rewriteEdges(canvasRoot, rel, `${mod}/${id}`);
+      return json(res, 200, { ok: true, path: `${mod}/${id}` });
+    }
+
+    // Wire a real navigation from an element to another view (link mode).
+    // Writes data-easel-nav/data-easel-view into the HTML and records the edge.
+    if (p === '/api/wire' && req.method === 'POST') {
+      const { path: rel, selector, to, label, before, after } = await readBody(req);
+      const dir = safeJoin(path.join(canvasRoot, 'modules'), rel || '');
+      const tdir = safeJoin(path.join(canvasRoot, 'modules'), to || '');
+      if (!dir || !exists(dir) || !tdir || !exists(tdir)) return json(res, 400, { error: 'bad path' });
+      const idx = path.join(dir, 'index.html');
+      let html = await fs.readFile(idx, 'utf8').catch(() => null);
+      let wired = false;
+      if (html != null) {
+        if (before && after && html.includes(before)) {
+          html = html.replace(before, after); wired = true;
+        } else {
+          const m = String(selector || '').match(/^#([\w-]+)$/);   // fallback: inject by id
+          if (m) {
+            const re = new RegExp('(<[a-zA-Z][^>]*\\bid=["\\\']' + m[1] + '["\\\'][^>]*?)(\\s*/?>)');
+            if (re.test(html)) { html = html.replace(re, `$1 data-easel-nav="${relHref(rel, to)}" data-easel-view="${to}"$2`); wired = true; }
+          }
+        }
+        if (wired) await fs.writeFile(idx, html);
+      }
+      const v = await readJSON(path.join(dir, 'view.json'), { links: [] });
+      v.links = v.links || [];
+      if (!v.links.some((l) => l.to === to && l.via === selector)) v.links.push({ to, label: label || '', via: selector, wired });
+      await writeJSON(path.join(dir, 'view.json'), v);
+      return json(res, 200, { ok: true, wired });
     }
 
     // ---- static: host canvas ------------------------------------------------

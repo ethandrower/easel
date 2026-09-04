@@ -8,9 +8,17 @@ description: Resolve open comments left on Easel design-canvas prototypes. Trigg
 Easel prototypes live under `design-canvas/modules/<module>/<view>/`. Each view folder has:
 - `index.html` — the standalone prototype (styled via `../../../shared/ds.js`)
 - `view.json` — `{ title, status, position, links }`
-- `comments.json` — `{ "comments": [ { id, selector, text, status } ] }`
+- `comments.json` — `{ "comments": [ { id, text, status, selector, tag, elementText, snippet, rect } ] }`
 
-A comment with `"status": "open"` is a unit of design feedback pinned to the element matched by its CSS `selector`. **Open comments are your work queue.**
+A view with **no `index.html`** is a rough sketch: `view.json` carries `"sketch": { "text": "..." }` — plain notes where `## Region` opens a region of the screen, `- item` lists what lives there, and `? question` is an open scoping question. Sketches have no pinned comments; to build one, create `index.html` from the notes (regions → sections, items → elements, answer the questions sensibly and say what you chose), move the text to `"brief"`, and drop the `sketch` key.
+
+A comment with `"status": "open"` is a unit of design feedback pinned to an element. Each open comment carries rich context to help you act precisely:
+- `selector` — the CSS selector of the pinned element (your primary edit target)
+- `tag` / `elementText` — the element's tag and its text, to disambiguate
+- `snippet` — the element's markup at capture time
+- `rect` — its on-screen box `{x,y,w,h}` (design location, not something to edit)
+
+**Open comments are your work queue.**
 
 ## Procedure
 
@@ -25,6 +33,8 @@ A comment with `"status": "open"` is a unit of design feedback pinned to the ele
 ## Rules
 
 - Edit only the prototype HTML and its view's `comments.json` / `view.json` / local `assets/`. Never touch another view to satisfy one comment.
+- Respect `view.json` `notes` (the screen's storyboard annotations) as the spec for that screen; a view with `variant: { of, label }` is an iteration — same content as its base, deliberately different design direction.
+- Style only with the synced library classes (`design-canvas/shared/library.json`) plus Tailwind utilities. Never add `<style>` blocks, `style=""` attributes, or new library-look-alike classes — `npx easel styles lint` flags them.
 - Don't run a build; these are standalone files. The running `easel` server live-reloads the viewer automatically after you save.
 - If a comment is ambiguous, make the most reasonable interpretation and note the assumption in your report rather than skipping it.
 - To add a NEW view a comment asks for, mirror the folder shape (`index.html` from `design-canvas/_template.html` + `view.json` + `comments.json`) and add a `link` to it from the parent view's `view.json`.

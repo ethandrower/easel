@@ -1,0 +1,123 @@
+# Using Easel
+
+A practical guide to building and managing prototypes. (For the architecture, see [SPEC.md](SPEC.md).)
+
+Run `npx easel` in a repo that has a `design-canvas/` folder (create one with `npx easel init`), then open the printed URL.
+
+## Tools & shortcuts
+
+Top-left tool switcher — or keyboard:
+
+| Key | Tool | What it does |
+|---|---|---|
+| `V` | **Pointer** | Pan, select, drag nodes, interact with prototypes |
+| `C` | **Comment** | Click any element on any view to pin a comment there |
+| `L` | **Link** | Click an element, then pick a target view to wire real navigation |
+
+Also: `F` fit · `+`/`-` or **⌘/Ctrl `+`/`-`/`0`** zoom (the canvas, not the browser) · **hold `Space`** to grab-pan from anywhere, even over a design · `Esc` back to pointer / close panels · double-click a view (or ⛶) opens it **full screen**.
+
+## Organizing the canvas
+
+- **Module switcher** (toolbar dropdown) — isolate one module at a time; everything else (nodes, edges, backdrops, minimap) hides and the view fits to that module. Pick "all modules" to zoom back out to the whole product.
+- **`T heading`** — click the button, then click the canvas to drop a big section heading (Figma-style). Enter commits; drag to move; hover → × to delete.
+- **`🗒 note`** — same flow, but drops a post-it note for written annotations (e.g. instructions for engineers next to a screen). ⌘/Ctrl+Enter or click-away commits; notes support multiple lines.
+- Labels live in `design-canvas/labels.json` and remember which module backdrop they sit in, so they follow it when you isolate a module.
+- Every screen's frame is **border-colored by its status** (gray idea, amber in-progress, blue in-review, green approved), with a status chip in the title bar — approval state reads at a glance, and **clicking the chip** changes the status right on the frame.
+
+## Creating views
+
+A "view" is one screen. There are three ways to make one — they all produce the same thing: a folder `design-canvas/modules/<module>/<view>/` with `index.html`, `view.json`, `comments.json`.
+
+1. **`+ view` button** — pick a module + title, optionally a parent to link from. If you also fill in **"What is this screen?"**, Easel copies a ready-to-paste **Claude design prompt** on create.
+2. **⧉ Prompt for Claude** (rail button on any view) — opens an editable prompt with the view's context (file path, shared classes, links, siblings) and any open comments. Type what you want under "Additional instructions", copy, and paste into Claude Code; the view fills in and live-reloads.
+3. **By hand / Claude Code** — just create the folder and the three files. The server sees it immediately and the canvas live-reloads. Minimal `view.json`:
+   ```json
+   { "title": "Profile", "status": "idea", "position": { "x": 80, "y": 80 }, "links": [] }
+   ```
+
+New views scaffold from `design-canvas/_template.html`. Give buttons/links stable `id`s so they're easy to wire and comment on.
+
+Manage views from the rail: **rename** (folder id), **duplicate** (great for variants), **delete**. Use **⤢ arrange** to auto-lay-out the whole graph by its links when things get messy.
+
+## Sketch first — scoping before designing
+
+When a module is still an idea, don't design screens yet — sketch them. Press **`S`** (or the **✎ sketch** button), click the canvas where the screen should go, name it, and start typing. A sketch is a view with **no HTML at all**: its notes live in `view.json` and render as a low-fi wireframe in a real screen's footprint.
+
+Notes are plain text with three conventions:
+
+```
+A line about what this screen is for.
+
+## Toolbar
+- device switcher
+- "check copy" button
+
+## Table
+- one row per claim: grade, trend, owner
+
+? per-device or portfolio-wide by default?
+```
+
+`##` opens a region of the screen, `-` lists what lives in it, `?` is an open question (shown in an amber box). Click a sketch to edit it in place — ⌘/Ctrl+Enter or click away saves, Esc cancels.
+
+Everything else already works on sketches: drag them into flows with the ↗ handle, drop headings and post-its around them, flip their status, isolate their module, `⤢ arrange`. Comments can't be pinned to a sketch (there are no elements yet) — put that feedback in the notes.
+
+When a sketch is ready to become a real screen, select it and hit **⇧ Promote to design** in the rail. Easel scaffolds `index.html` from the template, moves the sketch text into the view's **notes** (the storyboard strip under the new frame), and opens the Claude prompt with those notes as the spec — copy, paste into Claude Code, and the frame fills in right where the sketch was. Links you drew survive.
+
+By hand / Claude Code: a sketch is just a view folder with `view.json` (`{ title, status, position, links, "sketch": { "text": "..." } }`) and `comments.json`, and no `index.html`.
+
+## Storyboard notes — annotations on every screen
+
+Every design frame has a notes strip floating under it (hover an empty frame to see "＋ screen notes"). Click it, type the details for that screen — intent, content rules, edge cases, feedback — and click away (or ⌘/Ctrl+Enter) to save; Esc cancels. Notes live in the view's `view.json` (`notes`) and are included in that screen's **⧉ Prompt for Claude**, so every design pass is contextual to that screen. A promoted sketch's text lands here automatically.
+
+## Iterations — several design directions per screen
+
+Select a view and hit **iterate** in the rail: Easel copies it as `<view>-b` with an *iter B* chip in its title bar, links it back to the base with an "iteration B" edge, and carries the notes over. Its Claude prompt states which iteration it is and instructs a deliberately different direction from the base and the other iterations — same content, different design. Iterating an iteration adds C to the same family. Keep the winner, delete the rest.
+
+## The style library — synced from your repo, linted
+
+Point the canvas at your app's real style sources in `design-canvas/canvas.config.json`:
+
+```json
+{ "styles": { "tailwind": "../tailwind.config.js", "css": ["../src/style.css"] } }
+```
+
+- **`easel styles sync`** pulls them into `shared/library.gen.js` (tokens + component classes, injected at runtime by your `ds.js` — still zero-build), `shared/library.gen.css` (a plain copy) and `shared/library.json` (the class inventory). Re-run it any time the app's styles change — every screen updates.
+- The viewer feeds the inventory into every Claude prompt: build only with the synced classes plus Tailwind utilities — no `<style>` blocks, no invented `btn-*` look-alikes.
+- **`easel styles lint`** scans every screen and reports (terminal + `style-report.json`): inline `<style>` rules, `style=""` attributes, rules that duplicate a library class, invented library-look-alike classes, and the same custom style repeated across screens — the tell-tales of AI-generated style sprawl. Run it after any batch of generated designs.
+
+## Edges — the three kinds of link
+
+Easel distinguishes *documentation* links (just a drawn arrow) from *real* navigation (the prototype actually goes there). Both show as arrows; real ones are drawn solid/accent, documentation ones gray.
+
+1. **Drag-to-link (documentation).** In pointer mode, drag the **↗ handle** on a node's top-right onto another node. Records a plain edge in `view.json` `links[]`. Click the edge to **label or delete** it. Use this to sketch flow before it's wired.
+2. **Link mode (real navigation).** Pick the **🔗 Link** tool, click a source element (e.g. a button), choose the target view. Easel writes a real `data-easel-nav` onto the element *and* records a `wired` edge. Now:
+   - opened **standalone**, the prototype navigates for real;
+   - on the **canvas**, clicking it flies to the target node (keeps the map coherent);
+   - in **focus mode**, clicking it follows through to the target.
+   > The element needs a stable `id` (or matching markup) to wire the click. If it can't, Easel still records the edge and tells you — add an `id` or ask Claude to wire it.
+3. **Hand-authored (auto-derived).** Any `<a href="../other-view/index.html">` or `data-easel-nav` you (or Claude) write in the HTML is **automatically surfaced as an edge** — no drawing needed. This is how Claude-built navigation shows up on the canvas.
+
+Wired/derived edges are edited by changing the HTML (Easel tells you when you click one); documentation edges are edited from the canvas.
+
+**Dead clicks flash the hotspots.** Click anything on a prototype that has no wired action — on the canvas or in full-screen focus — and every element that *does* navigate flashes blue for a moment (Figma-style), so you can see instantly where the prototype is functional and where it isn't. Typing in inputs doesn't count as a dead click.
+
+## Commenting (the feedback loop)
+
+- Press `C` (or the 💬 tool), then click any element on any view — a comment pins to that element with rich context (selector, tag, current markup, on-screen box). Works on the canvas *and* in full-screen focus.
+- **Click a pin** to read the comment, then **Resolve** or **Delete**.
+- **☰ comments** (toolbar) lists every open comment across the whole canvas; click one to jump to it.
+- Set a view's **status** (idea → in-progress → in-review → approved) by clicking the chip on its title bar, or from the rail.
+
+## Handing feedback to Claude Code
+
+- **⧉ Prompt for Claude** (per view, in the rail and the focus bar) or **⧉ resolve all** (toolbar) opens an editable prompt — each open comment with its selector, current markup, and location, plus the view's design context. Edit it if you like, then **⧉ Copy** (the text is pre-selected, so ⌘/Ctrl+C also works).
+- Paste it into Claude Code. The shipped **`easel-resolve`** skill tells Claude to edit each `index.html` at the pinned selector and mark the comment resolved. The canvas live-reloads with the changes — if you keep a view open full-screen, it reloads there too, so you can watch the redesign land.
+
+## The whole loop, end to end
+
+1. `+ view` → describe it → paste the design prompt into Claude → screen appears.
+2. `L` wire its buttons to other screens.
+3. `C` drop feedback on anything that's off.
+4. **⧉ Prompt for Claude** → copy → paste → Claude applies it → live-reload.
+5. Flip the view to **approved** when it's done.

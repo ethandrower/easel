@@ -2,25 +2,42 @@
 
 Open-core. The golden rule: **never cripple local.** Single-player is complete and free; the paid product is the collaboration + hosting layer that a team can't trivially self-host.
 
-## v1 — OSS local loop (this repo)
+## v1 — OSS local loop (this repo) — DONE
 
 - [x] Filesystem-as-source-of-truth model (modules/views/edges/status/comments)
 - [x] Zero-dependency dev server: static + live-reload + tree/view/comments/insert API
 - [x] Vanilla pan/zoom graph canvas with live prototype iframes + edges
 - [x] Lean contextual rail: related links + element-pinned comments
 - [x] `easel init` scaffolding + Claude Code glue (skill + command + CLAUDE.md)
-- [ ] Verify the end-to-end loop on a real project (dogfood on citemed)
-- [ ] Delete-view / rename-view flows; broken-edge warnings in the UI
-- [ ] Draw edges by dragging between nodes (instead of editing view.json)
+- [x] Insert / duplicate / rename / delete views on the canvas
+- [x] Draw edges by dragging between nodes; click an edge to label/delete
+- [x] Inline comment composer (no blocking dialogs) + Copy Claude prompt
+- [x] Status filter, module group backdrops, minimap, cross-canvas comment overview
+- [x] Iframe virtualization (live near viewport, placeholders far out) for scale
+- [x] Cross-platform live-reload (recursive watch + mtime-poll fallback for Linux)
+- [x] Server API test suite (`npm test`)
+- [x] Browser-verified end-to-end
+- [x] Full-page focus mode + element-pinned commenting (canvas and focus)
+- [x] Link mode: wire real navigation (`data-easel-nav`) + auto-derived edges from markup
+- [x] Real click-through edges (standalone navigates; canvas flies; focus follows)
+- [x] One editable "Prompt for Claude" modal per view (design context + open comments), reliable copy
+- [x] Live-reload of the focus frame (watch Claude redesign a screen full-screen)
 
-## v2 — OSS polish
+## v2 — OSS polish (next)
 
-- [ ] Variant/state stacks per view (modal open, empty, error) as child nodes
-- [ ] Minimap + status filter/kanban view toggle
-- [ ] Canvas virtualization (screenshot placeholders → hydrate on zoom) for 100+ screens
-- [ ] Real click-through edges (a prototype button actually navigates to the linked view)
+Now dogfooding on a real product canvas (citemed Evidence Cloud) — items get promoted here as real use demands them.
+
+- [ ] npm publish — the `easel` name is TAKEN on npm (someone else's v0.2.6), so `npx easel` installs the wrong package. Publish under a scope (`@ethandrower/easel`) or pick a new name; until then, run from a checkout (`node <easel>/bin/cli.mjs`) or `npm link`. Fix the README quickstart when decided.
+- [x] **Sketch mode** — shipped: `✎ sketch` / `S` drops a rough frame with no HTML (notes in `view.json`, rendered natively as a low-fi wireframe in a screen's footprint), edited in place; links, labels, status and arrange all work on it; **⇧ Promote to design** scaffolds the HTML, keeps the notes as the view's `brief`, and seeds the Claude prompt with them. Next: promote could optionally emit a real low-fi HTML wireframe from the regions instead of the blank template.
+- [x] **Storyboard notes** — an annotation strip under every design frame (`view.json.notes`), edited in place, fed to the screen's Claude prompt; promoted sketches land their text here.
+- [x] **Iterations per view** — `iterate` copies a screen as a lettered sibling (`-b`, `-c`) tied to its base with a labeled edge; prompts instruct deliberate divergence. (*State* stacks — modal open / empty / error — still open below.)
+- [x] **Style-library sync + lint** — `easel styles sync` pulls the host repo's Tailwind theme + component CSS into `shared/library.gen.*` + a class inventory the prompts use; `easel styles lint` flags inline styles, duplicates of library classes, library look-alikes, and repeated custom styles (`style-report.json`).
+- [ ] State stacks per view (modal open, empty, error) as child nodes
+- [ ] Module management in-UI (create/rename/recolor/reorder; delete module)
+- [ ] Broken-edge warnings + a kanban (by-status) view toggle
 - [ ] Export (static bundle / PDF of a board)
 - [ ] Optional `ds.js` auto-detection for common setups (Tailwind, CSS vars)
+- [ ] Group backdrops handle spatially-interleaved modules gracefully
 
 ## Cloud — hosted collaboration (separate, closed, paid SaaS)
 

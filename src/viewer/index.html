@@ -11,12 +11,24 @@
     <!-- top toolbar -->
     <header id="toolbar">
       <span class="brand">▲ easel</span>
+      <div id="tools-mode" title="Tool">
+        <button id="tool-pointer" class="tool on" title="Pointer (V)">▮ pointer</button>
+        <button id="tool-comment" class="tool" title="Comment — drop comments on any view (C)">💬 comment</button>
+        <button id="tool-link" class="tool" title="Link — wire an element to another view (L)">🔗 link</button>
+      </div>
+      <select id="module-filter" title="Show a single module"><option value="">all modules</option></select>
       <div class="tools">
+        <button id="add-heading" title="Add a big text heading to the canvas">T heading</button>
+        <button id="add-note" title="Add a post-it note (annotations for engineers)">🗒 note</button>
+        <button id="overview-toggle" title="All open comments">☰ comments <span id="overview-count"></span></button>
+        <button id="arrange" title="Auto-arrange the graph by its links">⤢ arrange</button>
         <button id="fit" title="Fit to view">◹ fit</button>
         <button id="zoom-out" title="Zoom out">–</button>
         <span id="zoom-label">100%</span>
         <button id="zoom-in" title="Zoom in">+</button>
         <input id="search" type="search" placeholder="jump to view…" autocomplete="off" />
+        <button id="copy-all" title="Open an editable prompt to resolve every open comment">⧉ resolve all</button>
+        <button id="add-sketch" title="Drop a rough sketch frame: notes only, no HTML — promote it to a design later (S)">✎ sketch</button>
         <button id="add-view" title="Insert a new view">+ view</button>
       </div>
     </header>
@@ -24,10 +36,18 @@
     <!-- the infinite canvas -->
     <main id="canvas">
       <div id="surface">
+        <div id="groups"></div>
         <svg id="edges" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div id="labels"></div>
         <div id="nodes"></div>
       </div>
+      <svg id="minimap" xmlns="http://www.w3.org/2000/svg"></svg>
     </main>
+
+    <aside id="overview" hidden>
+      <div class="overview-head">Open comments <button id="overview-close">×</button></div>
+      <div id="overview-list"></div>
+    </aside>
 
     <!-- the lean contextual rail -->
     <aside id="rail" class="empty">
@@ -44,6 +64,15 @@
             </select>
             <span id="v-module" class="v-module"></span>
           </div>
+          <div class="v-id"><code id="v-path"></code></div>
+          <button id="act-focus" class="focus-btn" title="Open this view full screen (or double-click it)">⛶ Open full screen</button>
+          <button id="open-prompt" class="design-btn" title="Open an editable Claude prompt for this view (design context + open comments)">⧉ Prompt for Claude</button>
+          <div class="v-actions">
+            <button id="act-variant" title="Create a lettered iteration of this screen to explore another design direction">iterate</button>
+            <button id="act-rename" title="Rename the folder id">rename</button>
+            <button id="act-duplicate" title="Duplicate this view">duplicate</button>
+            <button id="act-delete" class="danger" title="Delete this view">delete</button>
+          </div>
         </div>
 
         <section class="rail-section">
@@ -59,6 +88,14 @@
           <ul id="comments" class="comments"></ul>
           <button id="add-comment">+ add comment</button>
           <p id="pin-hint" hidden>Click an element in the screen to pin your comment…</p>
+          <div id="composer" hidden>
+            <div class="composer-sel"><code id="composer-selector"></code></div>
+            <textarea id="composer-text" rows="3" placeholder="Describe the change…"></textarea>
+            <div class="composer-actions">
+              <button id="composer-cancel">Cancel</button>
+              <button id="composer-save" class="primary">Add comment</button>
+            </div>
+          </div>
         </section>
       </div>
     </aside>
@@ -69,9 +106,87 @@
       <label>Module <input id="insert-module" placeholder="tasks" /></label>
       <label>Title <input id="insert-title" placeholder="Task Filters" /></label>
       <label>Link from (optional) <input id="insert-parent" placeholder="tasks/task-list" /></label>
+      <label>What is this screen? (optional) <textarea id="insert-desc" rows="2" placeholder="e.g. a settings page with account, notifications and billing sections"></textarea></label>
       <div class="insert-actions">
         <button id="insert-cancel">Cancel</button>
         <button id="insert-create" class="primary">Create</button>
+      </div>
+      <p class="insert-hint">If you describe it, a Claude design prompt is copied on create — paste it into Claude Code.</p>
+    </div>
+
+    <!-- quick-sketch popover: opens where you clicked on the canvas -->
+    <div id="sketch-form" hidden>
+      <h3>New sketch</h3>
+      <label>Module <input id="sketch-module" list="module-list" placeholder="tasks" autocomplete="off" /></label>
+      <label>Title <input id="sketch-title" placeholder="Bulk actions" autocomplete="off" /></label>
+      <div class="insert-actions">
+        <button id="sketch-cancel">Cancel</button>
+        <button id="sketch-create" class="primary">Create</button>
+      </div>
+    </div>
+    <datalist id="module-list"></datalist>
+
+    <div id="prompt-panel" hidden>
+      <h3>Prompt · <span id="prompt-title"></span></h3>
+      <p class="prompt-hint">Edit anything, then copy and paste into Claude Code. Add what you want built or changed under “Additional instructions”.</p>
+      <textarea id="prompt-text" rows="16" spellcheck="false"></textarea>
+      <div class="insert-actions">
+        <button id="prompt-close">Close</button>
+        <button id="prompt-copy" class="primary">⧉ Copy</button>
+      </div>
+    </div>
+    <div id="edge-pop" hidden>
+      <input id="edge-label" placeholder="edge label" />
+      <button id="edge-save">save</button>
+      <button id="edge-del" class="del">delete</button>
+    </div>
+    <div id="toast"></div>
+
+    <div id="link-picker" hidden>
+      <div class="lp-head">Link this element to which view? <button id="lp-cancel">×</button></div>
+      <div id="lp-list"></div>
+    </div>
+
+    <div id="drop" hidden>
+      <div class="composer-sel"><code id="drop-sel"></code></div>
+      <textarea id="drop-text" rows="3" placeholder="Describe the change…"></textarea>
+      <div class="composer-actions">
+        <button id="drop-cancel">Cancel</button>
+        <button id="drop-save" class="primary">Add comment</button>
+      </div>
+    </div>
+
+    <div id="comment-pop" hidden>
+      <div id="cp-text"></div>
+      <div id="cp-meta"></div>
+      <div class="cp-actions">
+        <button id="cp-resolve">Resolve</button>
+        <button id="cp-delete" class="cp-del">Delete</button>
+        <button id="cp-close">Close</button>
+      </div>
+    </div>
+
+    <div id="focus" hidden>
+      <div class="focus-bar">
+        <span id="focus-title"></span>
+        <div class="focus-actions">
+          <button id="focus-comment" title="Pin a comment to an element">💬 Comment</button>
+          <button id="focus-copy" title="Open an editable Claude prompt for this view">⧉ Prompt for Claude</button>
+          <button id="focus-close" title="Back to canvas (Esc)">× close</button>
+        </div>
+      </div>
+      <div class="focus-body">
+        <iframe id="focus-frame"></iframe>
+        <div id="focus-pins"></div>
+        <div id="focus-hint" hidden>Click an element in the design to pin your comment…</div>
+      </div>
+      <div id="focus-composer" hidden>
+        <div class="composer-sel"><code id="focus-composer-sel"></code></div>
+        <textarea id="focus-composer-text" rows="3" placeholder="Describe the change…"></textarea>
+        <div class="composer-actions">
+          <button id="focus-composer-cancel">Cancel</button>
+          <button id="focus-composer-save" class="primary">Add comment</button>
+        </div>
       </div>
     </div>
   </div>
