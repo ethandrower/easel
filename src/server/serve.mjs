@@ -93,6 +93,33 @@ async function copyDir(src, dst) {
 
 async function rmDir(p) { await fs.rm(p, { recursive: true, force: true }); }
 
+// Serialize a sketch into readable screen notes. A prose sketch is its text; a
+// wireframe sketch becomes an element list with its numbered annotations, so
+// the Claude design prompt gets the full spec when the sketch is promoted.
+export function sketchToNotes(sk) {
+  if (!sk) return '';
+  if (sk.text) return sk.text;
+  const els = Array.isArray(sk.elements) ? sk.elements : [];
+  if (!els.length) return '';
+  // notes are elements too (type "note", optionally pinned to another element
+  // via `el`) — they serialize as numbered annotations under the layout
+  const notes = els.filter((e) => e.type === 'note');
+  const parts = els.filter((e) => e.type !== 'note');
+  const L = ['Wireframe — elements positioned in a 1200×780 frame (top-left origin):'];
+  for (const e of parts) {
+    const tags = notes.map((x, i) => (x.el === e.id ? `[${i + 1}]` : null)).filter(Boolean).join('');
+    L.push(`- ${e.type} ${JSON.stringify(e.label || '')} at (${Math.round(e.x)},${Math.round(e.y)}) size ${Math.round(e.w)}×${Math.round(e.h)}${tags ? ' ' + tags : ''}`);
+  }
+  if (notes.length) {
+    L.push('', 'Annotations — numbered notes pinned to the marked elements:');
+    notes.forEach((x, i) => {
+      const t = parts.find((p) => p.id === x.el);
+      L.push(`[${i + 1}] ${t ? `on the ${t.type}${t.label ? ' ' + JSON.stringify(String(t.label).split('\n')[0]) : ''}` : '(whole screen)'}: ${x.label || ''}`);
+    });
+  }
+  return L.join('\n');
+}
+
 // A fresh view's HTML: the canvas's _template.html with the title filled in.
 async function scaffoldHtml(canvasRoot, title) {
   const tpl = await fs.readFile(path.join(canvasRoot, '_template.html'), 'utf8').catch(() => '<!doctype html><html><head><script src="../../../shared/ds.js"></script></head><body><main class="p-6"><h1>__TITLE__</h1></main></body></html>');
@@ -319,7 +346,10 @@ export function startServer({ canvasRoot, viewerRoot, port = 4321 }) {
         pos = { x: pos.x, y: pos.y + STEP };
       }
       const vjson = { title, status: 'idea', position: pos, links: [] };
-      if (sketch) vjson.sketch = { text: typeof text === 'string' ? text : '' };
+      // text = a prose sketch (the older format, still supported for hand-written
+      // notes); without text a sketch starts as an empty wireframe (elements +
+      // annotations, edited on the canvas Balsamiq-style)
+      if (sketch) vjson.sketch = typeof text === 'string' && text ? { text } : { elements: [] };
       await writeJSON(path.join(viewDir, 'view.json'), vjson);
       await writeJSON(path.join(viewDir, 'comments.json'), { comments: [] });
       if (pv) {
@@ -339,7 +369,9 @@ export function startServer({ canvasRoot, viewerRoot, port = 4321 }) {
       if (exists(path.join(dir, 'index.html'))) return json(res, 409, { error: 'already a design' });
       const v = await readJSON(path.join(dir, 'view.json'), {});
       await fs.writeFile(path.join(dir, 'index.html'), await scaffoldHtml(canvasRoot, v.title || rel.split('/').pop()));
-      if (v.sketch) { if (v.sketch.text) v.notes = v.sketch.text; delete v.sketch; }   // the storyboard notes ride along
+      // a prose sketch folds into the screen notes; a WIREFRAME sketch stays —
+      // the screen keeps both faces (wireframe + design) and you toggle in focus
+      if (v.sketch && v.sketch.text) { v.notes = v.sketch.text; delete v.sketch; }
       await writeJSON(path.join(dir, 'view.json'), v);
       return json(res, 200, { ok: true, path: rel });
     }

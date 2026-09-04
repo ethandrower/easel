@@ -39,32 +39,20 @@ New views scaffold from `design-canvas/_template.html`. Give buttons/links stabl
 
 Manage views from the rail: **rename** (folder id), **duplicate** (great for variants), **delete**. Use **⤢ arrange** to auto-lay-out the whole graph by its links when things get messy.
 
-## Sketch first — scoping before designing
+## Sketch first — Balsamiq-style wireframes
 
-When a module is still an idea, don't design screens yet — sketch them. Press **`S`** (or the **✎ sketch** button), click the canvas where the screen should go, name it, and start typing. A sketch is a view with **no HTML at all**: its notes live in `view.json` and render as a low-fi wireframe in a real screen's footprint.
+When a module is still an idea, don't design screens yet — wireframe them. Press **`S`** (or the **✎ sketch** button), click the canvas where the screen should go, name it, and you get an empty frame with a palette: **box · heading · text · button · input · select · checkbox · table · image · tabs · note**.
 
-Notes are plain text with three conventions:
+- Click a palette item to drop it; **drag** to arrange, **corner handle** to resize, **double-click** to label (tables and tabs take `Col A | Col B | Col C`; a box takes a title line plus `- item` lines).
+- **Notes are the annotations.** Hover an element and hit **✎** to pin a numbered note describing how it works; drag a note's **◉** onto a different element to re-pin it (drop on empty space for a whole-screen note). Leader lines show what describes what, clicking a note or element lights up its partner, and the rail lists every note.
+- Double-click the frame (or its ✎ button) to edit the wireframe **full screen** — palette work happens comfortably there.
+- Everything lives in the view's `view.json` (`sketch.elements`), so Claude can read and edit the wireframe as data.
 
-```
-A line about what this screen is for.
+When it's ready, **⇧ Promote to design** scaffolds `index.html` and opens the Claude prompt carrying the full spec: every element with its position and size, plus the numbered notes pinned to them — layout relations *and* located annotations, not just prose. **The wireframe is kept**: the screen now has two faces.
 
-## Toolbar
-- device switcher
-- "check copy" button
+## Faces — wireframe ↔ design ↔ iterations
 
-## Table
-- one row per claim: grade, trend, owner
-
-? per-device or portfolio-wide by default?
-```
-
-`##` opens a region of the screen, `-` lists what lives in it, `?` is an open question (shown in an amber box). Click a sketch to edit it in place — ⌘/Ctrl+Enter or click away saves, Esc cancels.
-
-Everything else already works on sketches: drag them into flows with the ↗ handle, drop headings and post-its around them, flip their status, isolate their module, `⤢ arrange`. Comments can't be pinned to a sketch (there are no elements yet) — put that feedback in the notes.
-
-When a sketch is ready to become a real screen, select it and hit **⇧ Promote to design** in the rail. Easel scaffolds `index.html` from the template, moves the sketch text into the view's **notes** (the storyboard strip under the new frame), and opens the Claude prompt with those notes as the spec — copy, paste into Claude Code, and the frame fills in right where the sketch was. Links you drew survive.
-
-By hand / Claude Code: a sketch is just a view folder with `view.json` (`{ title, status, position, links, "sketch": { "text": "..." } }`) and `comments.json`, and no `index.html`.
+Double-click any frame to open it full screen. The bar shows the screen's faces: **✏ wireframe**, **design**, and each lettered **iteration**. Flip between them to compare versions, or go back to the wireframe and re-imagine a screen that's already built — comments pin on design faces, notes live on the wireframe. (Prose sketches from older canvases still render and edit as text cards.)
 
 ## Storyboard notes — annotations on every screen
 

@@ -10,7 +10,7 @@ Easel prototypes live under `design-canvas/modules/<module>/<view>/`. Each view 
 - `view.json` — `{ title, status, position, links }`
 - `comments.json` — `{ "comments": [ { id, text, status, selector, tag, elementText, snippet, rect } ] }`
 
-A view with **no `index.html`** is a rough sketch: `view.json` carries `"sketch": { "text": "..." }` — plain notes where `## Region` opens a region of the screen, `- item` lists what lives there, and `? question` is an open scoping question. Sketches have no pinned comments; to build one, create `index.html` from the notes (regions → sections, items → elements, answer the questions sensibly and say what you chose), move the text to `"brief"`, and drop the `sketch` key.
+A view's `view.json` may carry a wireframe: `"sketch": { "elements": [...] }` — primitives (`box/heading/text/button/input/select/checkbox/table/image/tabs`) positioned in a 1200×780 frame, plus `note` elements (numbered annotations whose `el` pins them to an element and whose `label` is the text). Treat the wireframe as the layout spec and the notes as behavior requirements when creating or revising `index.html`; never delete `sketch` — wireframe and design are two faces of the same screen. (Legacy prose sketches use `"sketch": {"text": ...}` with `## region` / `- item` / `? question` lines; build from those and move the text to `"notes"`.)
 
 A comment with `"status": "open"` is a unit of design feedback pinned to an element. Each open comment carries rich context to help you act precisely:
 - `selector` — the CSS selector of the pinned element (your primary edit target)

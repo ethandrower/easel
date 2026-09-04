@@ -44,6 +44,10 @@
   let pendingSketch = false;        // waiting for a click to place a new sketch frame
   let sketchEdit = null;            // { path, value, sel } while a sketch is being edited in place (survives re-render)
   let noteEdit = null;              // { path, value, sel } while a screen's notes strip is being edited
+  let focusFace = null;             // in focus mode: 'wire' or the path of the design/iteration face being shown
+  let wfSel = null;                 // { path, id } — the selected wireframe element
+  let wfDragging = false;           // true while a wireframe drag/resize/pin is in flight
+  let focusWireScale = 1;           // scale applied to the wireframe stage in focus mode
   let libraryInfo = null;           // shared/library.json — the synced style-library inventory, when present
   const inActiveModule = (n) => !activeModule || n.data._module.id === activeModule;
 
@@ -96,6 +100,11 @@
     nodes.clear();
     all.forEach((v, i) => nodes.set(v.id, { data: v, cache: caches[i], dom: null }));
     render();
+    // the focus wireframe stage holds DOM bound to the old caches — rebuild it
+    // from the fresh ones (but never out from under an active edit or drag)
+    if (focusFace === 'wire' && focusPath && nodes.has(focusPath) && !wfDragging && !document.querySelector('#focus-wire .wf-edit')) {
+      renderFocusWire(familyBase(focusPath));
+    }
     // don't rebuild the rail out from under an active inline editor (rename / composer)
     const editing = !$('composer').hidden || !!document.querySelector('.rename-input');
     if (keepSelection && selected && nodes.has(selected)) { if (!editing) select(selected); }
@@ -473,6 +482,8 @@
 
   function fillComments(path) {
     const n = nodes.get(path);
+    // a wireframe-only sketch lists its element annotations in the rail instead
+    if (n.data.kind === 'sketch' && n.cache.view.sketch && Array.isArray(n.cache.view.sketch.elements)) { fillWfAnnotations(path); return; }
     const list = $('comments');
     list.innerHTML = '';
     const cs = n.cache.comments.comments || [];
@@ -793,25 +804,92 @@
   // --- full-page focus mode (view + contextual commenting) ------------------
   let focusPath = null;
   let focusPending = null;
-  function openFocus(path) {
+  // A screen is a family of faces: its wireframe (sketch), its design
+  // (index.html), and its lettered iterations. Focus mode shows one face at a
+  // time with a switcher, so you can flip between the sketch and the designs
+  // and re-imagine either at any point.
+  function familyBase(path) {
+    const n = nodes.get(path);
+    const va = n && n.cache.view.variant;
+    return va && va.of && nodes.has(va.of) ? va.of : path;
+  }
+  function openFocus(path, face) {
     const n = nodes.get(path);
     if (!n) return;
-    if (n.data.kind === 'sketch') { editSketch(path); return; }   // sketches edit in place instead
-    select(path);
-    focusPath = path;
-    $('focus-title').textContent = `${n.data.title}  ·  ${path}`;
+    const base = familyBase(path);
+    const baseN = nodes.get(base);
+    const wire = baseN && baseN.cache.view.sketch;
+    const hasWire = !!(wire && Array.isArray(wire.elements));
+    // a legacy prose sketch with no HTML still edits in place on the canvas
+    if (!hasWire && n.data.kind === 'sketch') { editSketch(path); return; }
+    if (!face) face = n.data.kind === 'design' ? path : 'wire';
+    focusFace = face;
+    focusPath = face === 'wire' ? base : face;
+    select(focusPath);
+    const fn = nodes.get(focusPath);
+    $('focus-title').textContent = `${fn.data.title}  ·  ${focusPath}`;
     $('focus-composer').hidden = true; $('focus-hint').hidden = true;
     $('focus').classList.remove('commenting');
+    buildFocusFaces(base, hasWire);
+    $('focus').hidden = false;   // unhide before measuring — the wireframe stage scales to fit
     const fr = $('focus-frame');
-    fr.onload = () => {
-      renderFocusPins();
-      armHotspotFlash(fr);
-      try { fr.contentWindow.addEventListener('scroll', renderFocusPins, { passive: true }); } catch { /* */ }
-    };
-    fr.src = n.data.url;
+    const wireHost = $('focus-wire');
+    if (face === 'wire') {
+      fr.onload = null; fr.src = 'about:blank'; fr.style.display = 'none';
+      $('focus-pins').innerHTML = '';
+      $('focus-comment').hidden = true;   // wireframes annotate via ✎ on elements, not pins
+      wireHost.hidden = false;
+      renderFocusWire(base);
+    } else {
+      wireHost.hidden = true; wireHost.innerHTML = '';
+      fr.style.display = '';
+      $('focus-comment').hidden = false;
+      fr.onload = () => {
+        renderFocusPins();
+        armHotspotFlash(fr);
+        try { fr.contentWindow.addEventListener('scroll', renderFocusPins, { passive: true }); } catch { /* */ }
+      };
+      fr.src = fn.data.url;
+    }
     $('focus').hidden = false;
   }
-  function closeFocus() { $('focus').hidden = true; $('focus-frame').src = 'about:blank'; $('focus-pins').innerHTML = ''; focusPath = null; }
+  function buildFocusFaces(base, hasWire) {
+    const bar = $('focus-faces');
+    bar.innerHTML = '';
+    const add = (label, face, title) => {
+      const b = el('button', focusFace === face ? 'on' : null, label);
+      if (title) b.title = title;
+      b.addEventListener('click', () => openFocus(base, face));
+      bar.append(b);
+    };
+    const baseN = nodes.get(base);
+    if (hasWire) add('✏ wireframe', 'wire', 'The wireframe for this screen — edit it any time');
+    if (baseN.data.kind === 'design') add('design', base, 'The built prototype');
+    for (const p of [...nodes.keys()].sort()) {
+      const va = nodes.get(p).cache.view.variant;
+      if (va && va.of === base && nodes.get(p).data.kind === 'design') add('iter ' + String(va.label).toUpperCase(), p, 'Iteration — a different design direction');
+    }
+  }
+  function renderFocusWire(base) {
+    const host = $('focus-wire');
+    host.innerHTML = '';
+    const wrap = el('div', 'wf-fit');
+    const stage = el('div', 'wf-stage');
+    wrap.append(stage); host.append(wrap);
+    const r = host.getBoundingClientRect();
+    focusWireScale = Math.max(0.2, Math.min((r.width - 48) / FRAME_W, (r.height - 48) / FRAME_H));
+    stage.style.transform = `scale(${focusWireScale})`;
+    wrap.style.width = FRAME_W * focusWireScale + 'px';
+    wrap.style.height = FRAME_H * focusWireScale + 'px';
+    renderWire(base, stage, () => focusWireScale);
+  }
+  function closeFocus() {
+    $('focus').hidden = true;
+    $('focus-frame').src = 'about:blank'; $('focus-frame').style.display = '';
+    $('focus-pins').innerHTML = '';
+    $('focus-wire').hidden = true; $('focus-wire').innerHTML = '';
+    focusPath = null; focusFace = null;
+  }
   $('focus-close').addEventListener('click', closeFocus);
   $('act-focus').addEventListener('click', () => { if (selected) openFocus(selected); });
   $('focus-copy').addEventListener('click', () => {
@@ -1225,6 +1303,12 @@
     const n = nodes.get(path);
     body.className = 'sketch-body';
     body.innerHTML = '';
+    // wireframe sketches render the Balsamiq-style editor; prose sketches keep the old text card
+    if (n.cache.view.sketch && Array.isArray(n.cache.view.sketch.elements)) {
+      body.classList.add('wf-mode');
+      renderWire(path, body, () => view.z);
+      return;
+    }
     if (sketchEdit && sketchEdit.path === path) { mountSketchEditor(path, body); return; }
     const text = (n.cache.view.sketch && n.cache.view.sketch.text) || '';
     const s = parseSketch(text);
@@ -1290,13 +1374,368 @@
   }
   function editSketch(path) {
     const n = nodes.get(path);
-    if (!n || !n.dom || n.data.kind !== 'sketch') return;
+    if (!n) return;
+    const skv = n.cache.view.sketch;
+    if (skv && Array.isArray(skv.elements)) { openFocus(path, 'wire'); return; }   // wireframes edit big, in focus
+    if (!n.dom || n.data.kind !== 'sketch') return;
     if (sketchEdit && sketchEdit.path === path) return;
     select(path);
     sketchEdit = { path, value: (n.cache.view.sketch && n.cache.view.sketch.text) || '', sel: null };
     const body = n.dom.querySelector('.sketch-body');
     if (body) renderSketchBody(path, body);
   }
+  // --- wireframe sketches: Balsamiq-style elements + numbered annotations ----
+  // A wireframe sketch is view.json `sketch: { elements: [...], annotations: [...] }`.
+  // Elements are primitives (box, heading, text, button, input, select, checkbox,
+  // table, image, tabs) positioned in the frame; annotations are numbered notes
+  // pinned to specific elements describing how they work. Edited on the canvas
+  // and, at full size, in focus mode — and kept after the design is built.
+  const WF_TYPES = [
+    ['box', '▢ box'], ['heading', 'H heading'], ['text', '¶ text'], ['button', '▭ button'],
+    ['input', '⌨ input'], ['select', '▾ select'], ['checkbox', '☑ check'], ['table', '▦ table'],
+    ['image', '🖼 image'], ['tabs', '⎘ tabs'], ['note', '✎ note'],
+  ];
+  const WF_DEFAULTS = {
+    box: { w: 360, h: 220 }, heading: { w: 420, h: 44, label: 'Heading' },
+    text: { w: 380, h: 80 }, button: { w: 150, h: 40, label: 'Button' },
+    input: { w: 260, h: 40, label: 'placeholder…' }, select: { w: 220, h: 40, label: 'Select' },
+    checkbox: { w: 220, h: 28, label: 'Checkbox' }, table: { w: 640, h: 220, label: 'Col A | Col B | Col C' },
+    image: { w: 260, h: 180 }, tabs: { w: 420, h: 40, label: 'Tab one | Tab two | Tab three' },
+    note: { w: 260, h: 96 },
+  };
+  function wfData(path) {
+    const v = nodes.get(path).cache.view;
+    if (!v.sketch || !Array.isArray(v.sketch.elements)) v.sketch = { elements: [] };
+    return v.sketch;
+  }
+  const wfNotes = (sk) => (sk.elements || []).filter((e) => e.type === 'note');
+  // Serialize the wireframe for the Claude prompt (mirrors the server's version).
+  function wfToNotes(sk) {
+    const notes = wfNotes(sk);
+    const parts = (sk.elements || []).filter((e) => e.type !== 'note');
+    const L = [];
+    for (const e of parts) {
+      const tags = notes.map((x, i) => (x.el === e.id ? `[${i + 1}]` : null)).filter(Boolean).join('');
+      L.push(`- ${e.type} ${JSON.stringify(e.label || '')} at (${Math.round(e.x)},${Math.round(e.y)}) size ${Math.round(e.w)}×${Math.round(e.h)}${tags ? ' ' + tags : ''}`);
+    }
+    if (notes.length) {
+      L.push('', 'Annotations — numbered notes pinned to the marked elements:');
+      notes.forEach((x, i) => {
+        const t = parts.find((p) => p.id === x.el);
+        L.push(`[${i + 1}] ${t ? `on the ${t.type}${t.label ? ' ' + JSON.stringify(String(t.label).split('\n')[0]) : ''}` : '(whole screen)'}: ${x.label || ''}`);
+      });
+    }
+    return L.join('\n');
+  }
+  function renderWire(path, surface, getScale) {
+    surface.classList.add('wf-surface');
+    surface.innerHTML = '';
+    const sk = wfData(path);
+    const svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('class', 'wf-lines');
+    svg.setAttribute('viewBox', `0 0 ${FRAME_W} ${FRAME_H}`);
+    svg.setAttribute('preserveAspectRatio', 'none');
+    surface.append(svg);
+    const pal = el('div', 'wf-palette');
+    for (const [type, label] of WF_TYPES) {
+      const b = el('button', null, label);
+      b.title = 'Add a ' + type;
+      b.addEventListener('mousedown', (e) => e.stopPropagation());
+      b.addEventListener('click', (e) => { e.stopPropagation(); addWfEl(path, type); });
+      pal.append(b);
+    }
+    surface.append(pal);
+    for (const elm of sk.elements) surface.append(buildWfEl(path, elm, surface, getScale));
+    drawWfLines(path, surface);
+    if (!sk.elements.length) surface.append(el('div', 'wf-hint', 'Add elements from the palette · drag to arrange · corner handle resizes · double-click to label · hover → ✎ pins a numbered note describing how it works (drag a note\'s ◉ to re-pin it)'));
+    surface.onmousedown = (e) => e.stopPropagation();
+    surface.onclick = (e) => { if (e.target === surface) { wfSel = null; refreshWfSel(surface); } };
+  }
+  function buildWfEl(path, elm, surface, getScale) {
+    const sk = wfData(path);
+    const d = el('div', 'wf-el wf-' + elm.type);
+    d.style.left = elm.x + 'px'; d.style.top = elm.y + 'px';
+    d.style.width = elm.w + 'px'; d.style.height = elm.h + 'px';
+    d.dataset.wf = elm.id;
+    if (wfSel && wfSel.path === path && wfSel.id === elm.id) d.classList.add('sel');
+    wfContent(d, elm, sk);
+    const tools = el('div', 'wf-tools');
+    if (elm.type !== 'note') {
+      const ann = el('button', null, '✎'); ann.title = 'Pin a note describing how this element works';
+      ann.addEventListener('mousedown', (e) => e.stopPropagation());
+      ann.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const note = { id: 'e' + Date.now().toString(36), type: 'note', x: Math.min(elm.x + elm.w + 28, FRAME_W - 280), y: Math.min(elm.y, FRAME_H - 110), w: 260, h: 96, label: '', el: elm.id };
+        wfData(path).elements.push(note);   // re-resolve the live cache
+        saveView(path); rerenderWf(path);
+        setTimeout(() => {
+          const host = surfaceFor(path);
+          const nd = host && host.querySelector(`.wf-el[data-wf="${note.id}"]`);
+          if (nd) editWfLabel(path, note, nd);
+        }, 0);
+      });
+      tools.append(ann);
+    }
+    const del = el('button', 'wf-del', '×');
+    del.title = elm.type === 'note' ? 'Delete note' : 'Delete element (its pinned notes become screen notes)';
+    del.addEventListener('mousedown', (e) => e.stopPropagation());
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const live = wfData(path);   // re-resolve the live cache
+      live.elements = live.elements.filter((x) => x.id !== elm.id);
+      for (const x of live.elements) if (x.el === elm.id) x.el = null;
+      saveView(path); rerenderWf(path);
+    });
+    tools.append(del);
+    d.append(tools);
+    if (elm.type === 'note') {
+      const pin = el('div', 'wf-pin', '◉');
+      pin.title = 'Drag onto an element to pin this note to it (drop on empty space to unpin)';
+      pin.addEventListener('mousedown', (e) => startWfPin(e, path, elm, surface, getScale));
+      d.append(pin);
+    }
+    const grip = el('div', 'wf-resize');
+    grip.addEventListener('mousedown', (e) => startWfResize(e, path, elm, d, getScale, surface));
+    d.append(grip);
+    d.addEventListener('mousedown', (e) => startWfDrag(e, path, elm, d, getScale, surface));
+    d.addEventListener('dblclick', (e) => { e.stopPropagation(); editWfLabel(path, elm, d); });
+    return d;
+  }
+  // The surface currently showing this wireframe (focus stage wins over the canvas node).
+  function surfaceFor(path) {
+    const stage = document.querySelector('#focus-wire .wf-stage');
+    if (stage && focusFace === 'wire' && familyBase(path) === path) return stage;
+    const n = nodes.get(path);
+    return n && n.dom ? n.dom.querySelector('.sketch-body') : null;
+  }
+  function wfContent(d, elm, sk) {
+    const label = elm.label || '';
+    const parts = label.split('|').map((s) => s.trim()).filter(Boolean);
+    const c = el('div', 'wf-c');
+    if (elm.type === 'heading') c.append(el('div', 'wf-h1', label || 'Heading'));
+    else if (elm.type === 'text') {
+      if (label) for (const ln of label.split('\n')) c.append(el('p', null, ln));
+      else for (const w of [95, 86, 64]) { const bar = el('div', 'wf-bar'); bar.style.width = w + '%'; c.append(bar); }
+    } else if (elm.type === 'button') c.append(el('div', 'wf-btn', label || 'Button'));
+    else if (elm.type === 'input') c.append(el('div', 'wf-input', label));
+    else if (elm.type === 'select') { const f = el('div', 'wf-input'); f.append(el('span', null, label || 'Select'), el('span', 'wf-caret', '▾')); c.append(f); }
+    else if (elm.type === 'checkbox') c.append(el('div', 'wf-check', '☐ ' + (label || 'Checkbox')));
+    else if (elm.type === 'tabs') {
+      const row = el('div', 'wf-tabrow');
+      (parts.length ? parts : ['Tab one', 'Tab two']).forEach((t, i) => row.append(el('div', 'wf-tab' + (i ? '' : ' on'), t)));
+      c.append(row);
+    } else if (elm.type === 'table') {
+      const t = el('table', 'wf-table'); const hr = el('tr');
+      const cols = parts.length ? parts : ['Col A', 'Col B', 'Col C'];
+      cols.forEach((h) => hr.append(el('th', null, h)));
+      t.append(hr);
+      for (let r = 0; r < 3; r++) { const tr = el('tr'); for (let i = 0; i < cols.length; i++) { const td = el('td'); td.append(el('div', 'wf-bar')); tr.append(td); } t.append(tr); }
+      c.append(t);
+    } else if (elm.type === 'image') { c.append(el('div', 'wf-img', '✕')); if (label) c.append(el('div', 'wf-cap', label)); }
+    else if (elm.type === 'note') {
+      c.append(el('span', 'wf-noteno', String(wfNotes(sk).indexOf(elm) + 1)));
+      const body = el('div', 'wf-notetext');
+      if (label) for (const ln of label.split('\n')) body.append(el('p', null, ln));
+      else body.append(el('p', 'ph', 'double-click to write the note…'));
+      c.append(body);
+    }
+    else {   // box: first label line = title, following lines = items
+      if (label) {
+        const lines = label.split('\n');
+        c.append(el('div', 'wf-boxtitle', lines[0]));
+        const ul = el('ul', 'wf-boxlist');
+        for (const ln of lines.slice(1)) if (ln.trim()) ul.append(el('li', null, ln.replace(/^[-•]\s*/, '')));
+        if (ul.children.length) c.append(ul);
+      }
+    }
+    d.append(c);
+  }
+  function addWfEl(path, type) {
+    const sk = wfData(path);
+    const def = WF_DEFAULTS[type] || { w: 200, h: 60 };
+    const i = sk.elements.length;
+    const elm = { id: 'e' + Date.now().toString(36) + i, type, x: 48 + (i % 5) * 40, y: 72 + (i % 6) * 40, w: def.w, h: def.h, label: def.label || '' };
+    sk.elements.push(elm);
+    wfSel = { path, id: elm.id };
+    saveView(path); rerenderWf(path);
+  }
+  function startWfDrag(e, path, elm, d, getScale, surface) {
+    if (e.target.closest('.wf-tools') || e.target.closest('.wf-resize') || e.target.closest('.wf-badge') || e.target.closest('.wf-edit')) return;
+    if (tool !== 'pointer') return;
+    e.preventDefault(); e.stopPropagation();
+    wfSel = { path, id: elm.id }; refreshWfSel(surface);
+    const start = { mx: e.clientX, my: e.clientY, ox: elm.x, oy: elm.y };
+    let moved = false;
+    wfDragging = true;
+    const kill = dragShield();
+    const move = (ev) => {
+      const s = getScale() || 1;
+      const dx = (ev.clientX - start.mx) / s, dy = (ev.clientY - start.my) / s;
+      if (Math.abs(dx) + Math.abs(dy) > 2) moved = true;
+      elm.x = Math.max(0, Math.round(start.ox + dx)); elm.y = Math.max(0, Math.round(start.oy + dy));
+      d.style.left = elm.x + 'px'; d.style.top = elm.y + 'px';
+      drawWfLines(path, surface);
+    };
+    const up = () => {
+      kill(); wfDragging = false;
+      document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+      if (moved) {
+        // a live-reload may have swapped the cache mid-drag — commit by id onto the current one
+        const cur = wfData(path).elements.find((x) => x.id === elm.id);
+        if (cur) { cur.x = elm.x; cur.y = elm.y; }
+        saveView(path);
+      } else litWf(path, surface, elm);   // a plain click lights up the note↔element pair
+    };
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+  }
+  function startWfResize(e, path, elm, d, getScale, surface) {
+    e.preventDefault(); e.stopPropagation();
+    const start = { mx: e.clientX, my: e.clientY, ow: elm.w, oh: elm.h };
+    wfDragging = true;
+    const kill = dragShield();
+    const move = (ev) => {
+      const s = getScale() || 1;
+      elm.w = Math.max(40, Math.round(start.ow + (ev.clientX - start.mx) / s));
+      elm.h = Math.max(24, Math.round(start.oh + (ev.clientY - start.my) / s));
+      d.style.width = elm.w + 'px'; d.style.height = elm.h + 'px';
+      drawWfLines(path, surface);
+    };
+    const up = () => {
+      kill(); wfDragging = false;
+      document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+      const cur = wfData(path).elements.find((x) => x.id === elm.id);
+      if (cur) { cur.w = elm.w; cur.h = elm.h; }
+      saveView(path); rerenderWf(path);
+    };
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+  }
+  function refreshWfSel(surface) {
+    surface.querySelectorAll('.wf-el').forEach((x) => x.classList.toggle('sel', !!(wfSel && x.dataset.wf === wfSel.id)));
+  }
+  function editWfLabel(path, elm, d) {
+    if (d.querySelector('.wf-edit')) return;
+    const multi = /^(text|box|table|tabs)$/.test(elm.type);
+    const ta = el('textarea', 'wf-edit');
+    ta.value = elm.label || '';
+    ta.placeholder = elm.type === 'table' || elm.type === 'tabs' ? 'Labels separated by |' : (elm.type === 'box' ? 'Title\n- what lives here' : 'Label…');
+    d.append(ta);
+    setTimeout(() => { ta.focus(); ta.select(); }, 0);
+    let done = false;
+    const commit = (cancel) => {
+      if (done) return; done = true;
+      if (!cancel) {
+        const cur = wfData(path).elements.find((x) => x.id === elm.id);
+        if (cur) cur.label = ta.value.replace(/\s+$/, '');
+        saveView(path);
+      }
+      rerenderWf(path);
+    };
+    ta.addEventListener('mousedown', (e) => e.stopPropagation());
+    ta.addEventListener('dblclick', (e) => e.stopPropagation());
+    ta.addEventListener('blur', () => commit(false));
+    ta.addEventListener('keydown', (ev) => {
+      ev.stopPropagation();
+      if (ev.key === 'Escape') { ev.preventDefault(); commit(true); }
+      if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey || !multi)) { ev.preventDefault(); commit(false); }
+    });
+  }
+  // Leader lines from pinned notes to their elements, drawn under the elements.
+  function drawWfLines(path, surface) {
+    const svg = surface.querySelector('.wf-lines');
+    if (!svg) return;
+    while (svg.lastChild && svg.lastChild.getAttribute('class') !== 'temp') svg.removeChild(svg.lastChild);
+    const sk = wfData(path);
+    for (const note of wfNotes(sk)) {
+      if (!note.el) continue;
+      const t = sk.elements.find((x) => x.id === note.el);
+      if (!t) continue;
+      const ln = document.createElementNS(SVGNS, 'line');
+      ln.setAttribute('x1', note.x + note.w / 2); ln.setAttribute('y1', note.y + note.h / 2);
+      ln.setAttribute('x2', t.x + t.w / 2); ln.setAttribute('y2', t.y + t.h / 2);
+      svg.append(ln);
+      const dot = document.createElementNS(SVGNS, 'circle');
+      dot.setAttribute('cx', t.x + t.w / 2); dot.setAttribute('cy', t.y + t.h / 2); dot.setAttribute('r', 7);
+      svg.append(dot);
+    }
+  }
+  // Drag a note's ◉ onto an element to (re)pin it; drop on empty space to unpin.
+  function startWfPin(e, path, elm, surface, getScale) {
+    e.preventDefault(); e.stopPropagation();
+    const sk = wfData(path);
+    const svg = surface.querySelector('.wf-lines');
+    const temp = document.createElementNS(SVGNS, 'line');
+    temp.setAttribute('class', 'temp');
+    const from = { x: elm.x + elm.w / 2, y: elm.y + elm.h / 2 };
+    temp.setAttribute('x1', from.x); temp.setAttribute('y1', from.y);
+    temp.setAttribute('x2', from.x); temp.setAttribute('y2', from.y);
+    svg.append(temp);
+    const toSketch = (ev) => {
+      const r = surface.getBoundingClientRect();
+      const s = getScale() || 1;
+      return { x: (ev.clientX - r.left) / s, y: (ev.clientY - r.top) / s };
+    };
+    let last = from;
+    wfDragging = true;
+    const kill = dragShield();
+    const move = (ev) => { last = toSketch(ev); temp.setAttribute('x2', last.x); temp.setAttribute('y2', last.y); };
+    const up = () => {
+      kill(); wfDragging = false;
+      document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+      temp.remove();
+      const live = wfData(path);   // re-resolve: a live-reload may have swapped the cache
+      // of everything under the drop point, pin to the smallest (a button on a box means the button)
+      const hit = live.elements
+        .filter((x) => x.type !== 'note' && last.x >= x.x && last.x <= x.x + x.w && last.y >= x.y && last.y <= x.y + x.h)
+        .sort((a, b) => a.w * a.h - b.w * b.h)[0];
+      const cur = live.elements.find((x) => x.id === elm.id);
+      if (cur) cur.el = hit ? hit.id : null;
+      saveView(path); rerenderWf(path);
+      toast(hit ? 'Note pinned' : 'Note unpinned — it now describes the whole screen');
+    };
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+  }
+  // Light up a note↔element pair so it's obvious what describes what.
+  function litWf(path, surface, elm) {
+    const sk = wfData(path);
+    const related = new Set();
+    if (elm.type === 'note') { if (elm.el) related.add(elm.el); }
+    else for (const x of wfNotes(sk)) if (x.el === elm.id) related.add(x.id);
+    const host = surfaceFor(path) || surface;   // the click may have landed on a just-replaced surface
+    host.querySelectorAll('.wf-el').forEach((x) => x.classList.toggle('lit', related.has(x.dataset.wf)));
+    if (related.size) setTimeout(() => host.querySelectorAll('.wf-el.lit').forEach((x) => x.classList.remove('lit')), 1600);
+  }
+  function rerenderWf(path) {
+    const n = nodes.get(path);
+    if (n && n.dom) { const b = n.dom.querySelector('.sketch-body'); if (b) renderSketchBody(path, b); }
+    const stage = document.querySelector('#focus-wire .wf-stage');
+    if (stage && focusFace === 'wire' && familyBase(path) === path) renderWire(path, stage, () => focusWireScale);
+    if (selected === path) fillComments(path);
+  }
+  function fillWfAnnotations(path) {
+    const ul = $('comments');
+    ul.innerHTML = '';
+    const sk = wfData(path);
+    const notes = wfNotes(sk);
+    $('comment-count').textContent = notes.length || '';
+    if (!notes.length) { ul.append(el('li', 'wf-ann-empty', 'No notes yet — hover an element and hit ✎, or add a ✎ note from the palette and drag its ◉ onto an element.')); return; }
+    notes.forEach((a, i) => {
+      const t = sk.elements.find((x) => x.id === a.el);
+      const li = el('li', 'wf-ann-item');
+      li.title = 'Click to light up the note and its element';
+      li.append(
+        el('div', 'wf-ann-el', `[${i + 1}] ${t ? t.type + (t.label ? ` “${String(t.label).split('\n')[0].slice(0, 34)}”` : '') : 'whole screen'}`),
+        el('div', 'wf-ann-text', a.label || '—'),
+      );
+      li.addEventListener('click', () => {
+        for (const target of document.querySelectorAll(`.wf-el[data-wf="${a.id}"], .wf-el[data-wf="${a.el}"]`)) {
+          target.classList.add('lit');
+          setTimeout(() => target.classList.remove('lit'), 1600);
+        }
+      });
+      ul.append(li);
+    });
+  }
+
   // --- storyboard notes: an annotation strip under every design frame -------
   // Free-form details for the screen, stored in view.json (`notes`) and fed to
   // the Claude prompt, so intent and feedback live with the screen itself.
@@ -1360,8 +1799,8 @@
     const res = await post('/api/promote', { path });
     if (!res.ok) { toast(res.error || 'Promote failed'); return; }
     await reloadTree();
-    if (nodes.has(path)) { select(path); openPrompt(composePrompt(path, 'Build this screen from the sketch notes above.'), title); }
-    toast('Promoted to a design — paste the prompt into Claude Code');
+    if (nodes.has(path)) { select(path); openPrompt(composePrompt(path, 'Build this screen to the wireframe and notes above.'), title); }
+    toast('Design face created — the wireframe stays; toggle between them in full screen');
   }
   // Quick-add: click the canvas where the sketch goes, name it, start typing.
   function armSketch() {
@@ -1500,6 +1939,14 @@
       L.push('');
       L.push(`This screen is ITERATION ${String(va.label).toUpperCase()} of "${baseN ? baseN.data.title : va.of}" (design-canvas/modules/${va.of}/index.html)${others.length ? ` — other iterations: ${others.join(', ')}` : ''}.`);
       L.push('Take a deliberately different design direction from the base screen and its other iterations unless the instructions below say otherwise: same content and purpose, different layout, structure, or emphasis.');
+    }
+    // the wireframe (kept alongside the design) is the layout spec
+    const wfBase = nodes.get(familyBase(path));
+    const wf = wfBase && wfBase.cache.view.sketch;
+    if (wf && Array.isArray(wf.elements) && wf.elements.length) {
+      L.push('');
+      L.push('Wireframe — build the layout to this spec (elements positioned in a 1200×780 frame, top-left origin; [n] marks refer to the annotations):');
+      wfToNotes(wf).split('\n').forEach((ln) => L.push('  ' + ln));
     }
     if (open.length) {
       L.push('');
