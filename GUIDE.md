@@ -62,9 +62,29 @@ A line about what this screen is for.
 
 Everything else already works on sketches: drag them into flows with the ↗ handle, drop headings and post-its around them, flip their status, isolate their module, `⤢ arrange`. Comments can't be pinned to a sketch (there are no elements yet) — put that feedback in the notes.
 
-When a sketch is ready to become a real screen, select it and hit **⇧ Promote to design** in the rail. Easel scaffolds `index.html` from the template, keeps the notes as the view's `brief`, and opens the Claude prompt with those notes as the spec — copy, paste into Claude Code, and the frame fills in right where the sketch was. Links you drew survive.
+When a sketch is ready to become a real screen, select it and hit **⇧ Promote to design** in the rail. Easel scaffolds `index.html` from the template, moves the sketch text into the view's **notes** (the storyboard strip under the new frame), and opens the Claude prompt with those notes as the spec — copy, paste into Claude Code, and the frame fills in right where the sketch was. Links you drew survive.
 
 By hand / Claude Code: a sketch is just a view folder with `view.json` (`{ title, status, position, links, "sketch": { "text": "..." } }`) and `comments.json`, and no `index.html`.
+
+## Storyboard notes — annotations on every screen
+
+Every design frame has a notes strip floating under it (hover an empty frame to see "＋ screen notes"). Click it, type the details for that screen — intent, content rules, edge cases, feedback — and click away (or ⌘/Ctrl+Enter) to save; Esc cancels. Notes live in the view's `view.json` (`notes`) and are included in that screen's **⧉ Prompt for Claude**, so every design pass is contextual to that screen. A promoted sketch's text lands here automatically.
+
+## Iterations — several design directions per screen
+
+Select a view and hit **iterate** in the rail: Easel copies it as `<view>-b` with an *iter B* chip in its title bar, links it back to the base with an "iteration B" edge, and carries the notes over. Its Claude prompt states which iteration it is and instructs a deliberately different direction from the base and the other iterations — same content, different design. Iterating an iteration adds C to the same family. Keep the winner, delete the rest.
+
+## The style library — synced from your repo, linted
+
+Point the canvas at your app's real style sources in `design-canvas/canvas.config.json`:
+
+```json
+{ "styles": { "tailwind": "../tailwind.config.js", "css": ["../src/style.css"] } }
+```
+
+- **`easel styles sync`** pulls them into `shared/library.gen.js` (tokens + component classes, injected at runtime by your `ds.js` — still zero-build), `shared/library.gen.css` (a plain copy) and `shared/library.json` (the class inventory). Re-run it any time the app's styles change — every screen updates.
+- The viewer feeds the inventory into every Claude prompt: build only with the synced classes plus Tailwind utilities — no `<style>` blocks, no invented `btn-*` look-alikes.
+- **`easel styles lint`** scans every screen and reports (terminal + `style-report.json`): inline `<style>` rules, `style=""` attributes, rules that duplicate a library class, invented library-look-alike classes, and the same custom style repeated across screens — the tell-tales of AI-generated style sprawl. Run it after any batch of generated designs.
 
 ## Edges — the three kinds of link
 

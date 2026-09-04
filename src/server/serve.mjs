@@ -156,6 +156,7 @@ async function scanTree(canvasRoot) {
         // a view with no index.html is a rough sketch (notes in view.json)
         // until it's promoted; the viewer renders those natively, no iframe
         kind: exists(path.join(viewDir, 'index.html')) ? 'design' : 'sketch',
+        variant: vjson.variant || null,   // { of, label } when this is an iteration of another screen
         url: `/canvas/modules/${mod}/${view}/index.html`,
         openComments: (cjson.comments || []).filter((c) => c.status !== 'resolved').length,
         totalComments: (cjson.comments || []).length,
@@ -338,9 +339,48 @@ export function startServer({ canvasRoot, viewerRoot, port = 4321 }) {
       if (exists(path.join(dir, 'index.html'))) return json(res, 409, { error: 'already a design' });
       const v = await readJSON(path.join(dir, 'view.json'), {});
       await fs.writeFile(path.join(dir, 'index.html'), await scaffoldHtml(canvasRoot, v.title || rel.split('/').pop()));
-      if (v.sketch) { if (v.sketch.text) v.brief = v.sketch.text; delete v.sketch; }
+      if (v.sketch) { if (v.sketch.text) v.notes = v.sketch.text; delete v.sketch; }   // the storyboard notes ride along
       await writeJSON(path.join(dir, 'view.json'), v);
       return json(res, 200, { ok: true, path: rel });
+    }
+
+    // Create a lettered iteration of a screen: a sibling copy tied back to its
+    // base view, so several design directions can hang off one storyboard slot.
+    if (p === '/api/variant' && req.method === 'POST') {
+      const { path: rel } = await readBody(req);
+      const dir = safeJoin(path.join(canvasRoot, 'modules'), rel || '');
+      if (!dir || !exists(dir)) return json(res, 400, { error: 'bad path' });
+      const src = await readJSON(path.join(dir, 'view.json'), {});
+      const baseRel = (src.variant && src.variant.of) || rel;   // iterating an iteration joins the same family
+      const [mod, baseView] = baseRel.split('/');
+      const modDir = path.join(canvasRoot, 'modules', mod);
+      const baseV = await readJSON(path.join(modDir, baseView, 'view.json'), {});
+      // next free letter across the family
+      const taken = new Set();
+      for (const v of (await fs.readdir(modDir, { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name)) {
+        const vj = await readJSON(path.join(modDir, v, 'view.json'), null);
+        if (vj && vj.variant && vj.variant.of === baseRel) taken.add(vj.variant.label);
+      }
+      let label = null;
+      for (const c of 'bcdefghijklmnopqrstuvwxyz') if (!taken.has(c)) { label = c; break; }
+      if (!label) return json(res, 400, { error: 'too many iterations' });
+      let id = `${baseView}-${label}`, n = 1;
+      while (exists(path.join(modDir, id))) id = `${baseView}-${label}-${++n}`;
+      const dst = path.join(modDir, id);
+      await copyDir(dir, dst);   // iterate from the screen you clicked (it may itself be an iteration)
+      const v = await readJSON(path.join(dst, 'view.json'), {});
+      const baseTitle = baseV.title || baseView;
+      v.title = `${baseTitle} · iteration ${label.toUpperCase()}`;
+      v.variant = { of: baseRel, label };
+      const basePos = baseV.position || { x: 80, y: 80 };
+      v.position = { x: basePos.x + taken.size * 1360, y: basePos.y + 1180 };
+      await writeJSON(path.join(dst, 'view.json'), v);
+      // tie it back with a labeled edge so the family reads on the graph
+      baseV.links = baseV.links || [];
+      const toPath = `${mod}/${id}`;
+      if (!baseV.links.some((l) => l.to === toPath)) baseV.links.push({ to: toPath, label: `iteration ${label.toUpperCase()}` });
+      await writeJSON(path.join(modDir, baseView, 'view.json'), baseV);
+      return json(res, 200, { ok: true, path: toPath, label });
     }
 
     // Delete a view: remove its folder and drop every edge pointing at it.

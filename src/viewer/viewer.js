@@ -43,6 +43,8 @@
   let pendingLabel = null;          // 'heading' | 'note' while waiting for a placement click
   let pendingSketch = false;        // waiting for a click to place a new sketch frame
   let sketchEdit = null;            // { path, value, sel } while a sketch is being edited in place (survives re-render)
+  let noteEdit = null;              // { path, value, sel } while a screen's notes strip is being edited
+  let libraryInfo = null;           // shared/library.json — the synced style-library inventory, when present
   const inActiveModule = (n) => !activeModule || n.data._module.id === activeModule;
 
   const surface = $('surface');
@@ -74,9 +76,14 @@
   async function reloadTree(keepSelection = true) {
     const my = ++reloadSeq;                       // newest reload wins; older ones bail
     const prevPos = new Map([...nodes].map(([p, n]) => [p, n.data.position]));
-    const [tree, labelData] = await Promise.all([api('/api/tree'), api('/api/labels')]);
+    const [tree, labelData, lib] = await Promise.all([
+      api('/api/tree'),
+      api('/api/labels'),
+      fetch('/canvas/shared/library.json').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    ]);
     if (my !== reloadSeq) return;                 // superseded while fetching the tree
     labels = labelData.labels || [];
+    libraryInfo = lib;
     fillModuleFilter(tree);
     const all = [];
     tree.modules.forEach((mod, mi) => mod.views.forEach((v, vi) => {
@@ -110,6 +117,11 @@
       const head = el('div', 'node-head');
       const dot = el('span', 'node-dot'); dot.style.background = statusColor(d.status);
       head.append(dot, el('span', 'node-title', d.title));
+      if (n.cache.view.variant) {
+        const vc = el('span', 'node-iter', 'iter ' + String(n.cache.view.variant.label || '').toUpperCase());
+        vc.title = 'Iteration of ' + n.cache.view.variant.of;
+        head.append(vc);
+      }
       const right = el('div', 'node-head-right');
       const stChip = el('span', 'node-status', d.status);
       stChip.title = 'Change status';
@@ -141,6 +153,10 @@
         catchEl.addEventListener('click', (e) => onCatchClick(e, path, frame));
         frame.append(catchEl);
         node.append(frame);
+        // storyboard notes strip floats under the frame (sketches ARE notes)
+        const nb = el('div', 'node-notes');
+        renderNotes(path, nb);
+        node.append(nb);
       }
 
       const handle = el('div', 'link-handle', '↗');
@@ -418,6 +434,7 @@
     $('open-prompt').textContent = isSketch ? '⇧ Promote to design' : '⧉ Prompt for Claude';
     $('open-prompt').title = isSketch ? 'Scaffold the HTML for this sketch and open a Claude prompt seeded with its notes' : 'Open an editable Claude prompt for this view (design context + open comments)';
     $('add-comment').hidden = isSketch;
+    $('act-variant').hidden = isSketch;   // iterate designs; sketches just get edited or duplicated
     // rebuild the id row fresh (the inline rename UI may have replaced its contents)
     const idWrap = document.querySelector('.v-id');
     if (idWrap) {
@@ -893,6 +910,15 @@
   $('arrange').addEventListener('click', tidyLayout);
 
   // --- rail actions: rename / duplicate / delete ---------------------------
+  $('act-variant').addEventListener('click', async () => {
+    if (!selected) return;
+    const res = await post('/api/variant', { path: selected });
+    if (res.ok) {
+      await reloadTree();
+      if (nodes.has(res.path)) flyTo(res.path);
+      toast(`Iteration ${String(res.label).toUpperCase()} created — open its Claude prompt to take it another direction`);
+    } else toast(res.error || 'Iterate failed');
+  });
   $('act-duplicate').addEventListener('click', async () => {
     if (!selected) return;
     const res = await post('/api/duplicate', { path: selected });
@@ -1271,6 +1297,61 @@
     const body = n.dom.querySelector('.sketch-body');
     if (body) renderSketchBody(path, body);
   }
+  // --- storyboard notes: an annotation strip under every design frame -------
+  // Free-form details for the screen, stored in view.json (`notes`) and fed to
+  // the Claude prompt, so intent and feedback live with the screen itself.
+  function renderNotes(path, nb) {
+    const n = nodes.get(path);
+    nb.className = 'node-notes';
+    nb.innerHTML = '';
+    if (noteEdit && noteEdit.path === path) { mountNotesEditor(path, nb); return; }
+    const text = n.cache.view.notes || '';
+    if (!text) { nb.classList.add('empty'); nb.textContent = '＋ screen notes'; }
+    else nb.textContent = text;
+    nb.onmousedown = (e) => e.stopPropagation();
+    nb.onclick = () => { if (tool === 'pointer') editNotes(path); };
+    nb.onwheel = (e) => { if (nb.scrollHeight > nb.clientHeight + 2) e.stopPropagation(); };
+  }
+  function mountNotesEditor(path, nb) {
+    nb.classList.add('editing');
+    const ta = el('textarea', 'notes-edit');
+    ta.value = noteEdit.value;
+    ta.rows = 6;
+    ta.placeholder = 'Details and annotations for this screen — the Claude prompt includes them.';
+    nb.append(ta);
+    const sel = noteEdit.sel;
+    setTimeout(() => { ta.focus(); if (sel != null) ta.setSelectionRange(sel, sel); }, 0);
+    let done = false;
+    const commit = async (cancel) => {
+      if (done) return; done = true;
+      const n = nodes.get(path);
+      noteEdit = null;
+      if (!cancel && n) {
+        const t = ta.value.replace(/\s+$/, '');
+        if (t) n.cache.view.notes = t; else delete n.cache.view.notes;
+        await saveView(path);
+      }
+      if (n && n.dom) { const b = n.dom.querySelector('.node-notes'); if (b) renderNotes(path, b); }
+    };
+    ta.addEventListener('input', () => { if (noteEdit) { noteEdit.value = ta.value; noteEdit.sel = ta.selectionStart; } });
+    ta.addEventListener('mousedown', (e) => e.stopPropagation());
+    ta.addEventListener('wheel', (e) => e.stopPropagation());
+    ta.addEventListener('blur', () => commit(false));
+    ta.addEventListener('keydown', (ev) => {
+      ev.stopPropagation();
+      if (ev.key === 'Escape') { ev.preventDefault(); commit(true); }
+      if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); commit(false); }
+    });
+  }
+  function editNotes(path) {
+    const n = nodes.get(path);
+    if (!n || !n.dom || (noteEdit && noteEdit.path === path)) return;
+    select(path);
+    noteEdit = { path, value: n.cache.view.notes || '', sel: null };
+    const nb = n.dom.querySelector('.node-notes');
+    if (nb) renderNotes(path, nb);
+  }
+
   // Promote: scaffold the HTML, then open the Claude prompt seeded with the notes.
   async function promoteSketch(path) {
     const n = nodes.get(path);
@@ -1394,16 +1475,31 @@
     L.push('');
     L.push('Design system:');
     L.push('- Keep <script src="../../../shared/ds.js"></script> in <head> (it provides the shared design system).');
-    L.push('- Build with the shared classes: .page (wrapper), .card, .btn (+ .secondary/.danger/.ghost), .badge (+ .gray/.blue/.green/.amber/.red), .field (label+input), table, .row/.between/.muted. Do not invent a parallel style system.');
+    if (libraryInfo && Array.isArray(libraryInfo.classes) && libraryInfo.classes.length) {
+      L.push(`- Build with the synced library classes (pulled from ${(libraryInfo.sources || []).join(', ')}) plus plain Tailwind utilities: ${libraryInfo.classes.join(', ')}.`);
+      L.push('- Do NOT write <style> blocks or style="" attributes, and do NOT invent new library-look-alike classes (a new btn-*/badge-* etc.): if the library lacks something, use utilities and leave an HTML comment noting the gap. `easel styles lint` flags strays.');
+    } else {
+      L.push('- Build with the shared classes: .page (wrapper), .card, .btn (+ .secondary/.danger/.ghost), .badge (+ .gray/.blue/.green/.amber/.red), .field (label+input), table, .row/.between/.muted. Do not invent a parallel style system.');
+    }
     L.push('- Give buttons and links stable ids so they can be wired to other screens.');
     if (links.length) L.push(`- This view links to: ${links.join(', ')} (wire buttons with data-easel-nav where relevant).`);
     if (sibs.length) L.push(`- Sibling screens in this module (match their visual language): ${sibs.join(', ')}.`);
-    // a promoted sketch carries its notes as the brief — that's the spec for the screen
-    const brief = n.cache.view.brief;
-    if (brief && String(brief).trim()) {
+    // the screen's storyboard notes are the spec (older canvases stored them as `brief`)
+    const notes = n.cache.view.notes || n.cache.view.brief;
+    if (notes && String(notes).trim()) {
       L.push('');
-      L.push('Sketch notes — this screen was scoped as a rough sketch; build it from these notes ("##" = a region of the screen, "-" = what lives in it, "?" = an open question: pick the sensible answer and say what you chose):');
-      String(brief).split('\n').forEach((ln) => L.push('  ' + ln));
+      L.push('Screen notes — the author\'s storyboard annotations for this screen; follow them ("##" = a region of the screen, "-" = what lives in it, "?" = an open question: pick the sensible answer and say what you chose):');
+      String(notes).split('\n').forEach((ln) => L.push('  ' + ln));
+    }
+    const va = n.cache.view.variant;
+    if (va) {
+      const others = [...nodes.values()]
+        .filter((o) => o.cache.view.variant && o.cache.view.variant.of === va.of && o.data.id !== path)
+        .map((o) => String(o.cache.view.variant.label).toUpperCase());
+      const baseN = nodes.get(va.of);
+      L.push('');
+      L.push(`This screen is ITERATION ${String(va.label).toUpperCase()} of "${baseN ? baseN.data.title : va.of}" (design-canvas/modules/${va.of}/index.html)${others.length ? ` — other iterations: ${others.join(', ')}` : ''}.`);
+      L.push('Take a deliberately different design direction from the base screen and its other iterations unless the instructions below say otherwise: same content and purpose, different layout, structure, or emphasis.');
     }
     if (open.length) {
       L.push('');

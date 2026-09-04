@@ -58,7 +58,7 @@ test('a sketch can be linked from a parent like any other view', async () => {
   assert.equal(child.view.sketch.text, '');
 });
 
-test('promote scaffolds index.html from the template and keeps the sketch text as the brief', async () => {
+test('promote scaffolds index.html from the template and keeps the sketch text as the notes', async () => {
   const r = await post('/api/promote', { path: 'tasks/bulk-actions' });
   assert.ok(r.ok);
   assert.ok(has('modules/tasks/bulk-actions/index.html'));
@@ -66,7 +66,7 @@ test('promote scaffolds index.html from the template and keeps the sketch text a
   assert.ok(html.includes('Bulk actions'), 'template title substituted');
   const v = await get('/api/view?path=tasks/bulk-actions');
   assert.equal(v.view.sketch, undefined);
-  assert.equal(v.view.brief, TEXT);
+  assert.equal(v.view.notes, TEXT, 'the sketch text becomes the screen notes');
   assert.ok(v.view.links.some((l) => l.to === 'tasks/undo-toast'), 'links survive promotion');
   const tree = await get('/api/tree');
   const views = tree.modules.find((m) => m.id === 'tasks').views;

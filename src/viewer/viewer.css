@@ -167,6 +167,16 @@ body.space-pan #edges .hit { pointer-events: none; }
 .sketch-edit { display: block; width: 100%; height: 100%; box-sizing: border-box; font: inherit; font-size: 20px; line-height: 1.45; color: var(--ink); border: 0; outline: 3px solid var(--accent); outline-offset: -3px; background: #fffdf7; padding: 24px 28px; resize: none; }
 .sketch-hint { position: absolute; right: 14px; bottom: 10px; font-size: 13px; color: var(--muted); pointer-events: none; }
 #add-sketch { border-color: #d97706; color: #b45309; font-weight: 600; }
+
+/* storyboard notes: an annotation strip floating under every design frame */
+.node-notes { position: absolute; top: calc(var(--frame-h) + 52px); left: 0; right: 0; background: #fffbeb; border: 1px solid rgba(217, 119, 6, .3); border-radius: 8px; padding: 12px 16px; font-size: 17px; line-height: 1.45; color: #4a3f10; white-space: pre-wrap; word-wrap: break-word; max-height: 210px; overflow: auto; cursor: text; box-shadow: 0 6px 18px rgba(120, 90, 0, .10); }
+.node-notes.empty { opacity: 0; color: #a3a9b4; background: #fafafa; border-style: dashed; box-shadow: none; transition: opacity .15s; }
+.node:hover .node-notes.empty { opacity: .85; }
+.node-notes.editing { padding: 0; overflow: hidden; }
+.notes-edit { display: block; width: 100%; box-sizing: border-box; font: inherit; font-size: 17px; line-height: 1.45; color: #4a3f10; background: #fffbeb; border: 0; outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 8px; padding: 12px 16px; resize: none; }
+
+/* iteration chip in the title bar */
+.node-iter { font-size: 11px; font-weight: 700; color: #7c3aed; background: #f4f3ff; border: 1px solid #d9d6fe; border-radius: 999px; padding: 1px 8px; white-space: nowrap; flex: none; }
 #sketch-form { position: fixed; z-index: 55; width: 300px; background: #fff; border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.25); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 #sketch-form[hidden] { display: none; }
 #sketch-form h3 { margin: 0; font-size: 13px; }

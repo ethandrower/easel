@@ -4,6 +4,9 @@
  *
  *   easel init            scaffold ./design-canvas + the Claude Code glue into this repo
  *   easel serve [--canvas <dir>] [--port <n>]   open the canvas in the browser
+ *   easel styles          sync the style library from the repo, then lint the screens
+ *   easel styles sync     pull tokens + component CSS from the repo sources into shared/
+ *   easel styles lint     flag inline/duplicate/invented styles that don't belong
  *   easel (no args)       == serve
  */
 import { promises as fs } from 'node:fs';
@@ -11,6 +14,7 @@ import fss from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from '../src/server/serve.mjs';
+import { syncStyles, lintStyles } from '../src/server/styles.mjs';
 
 const TOOL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CWD = process.cwd();
@@ -78,7 +82,41 @@ async function cmdServe(flags) {
   });
 }
 
+async function cmdStyles(sub, flags) {
+  const canvasRoot = path.resolve(CWD, flags.canvas || 'design-canvas');
+  if (!fss.existsSync(canvasRoot)) {
+    console.error(`No canvas at ${canvasRoot}. Run \`easel init\` first, or pass --canvas <dir>.`);
+    process.exit(1);
+  }
+  try {
+    if (!sub || sub === 'sync') {
+      const r = await syncStyles(canvasRoot);
+      console.log(`✓ synced ${r.classes.length} library classes from ${r.sources.join(', ')}`);
+      for (const [f, state] of Object.entries(r.files)) console.log(`  ${state === 'unchanged' ? '•' : '✓'} ${f} — ${state}`);
+      if (r.stripped.length) console.log(`  • stripped build-time directives: ${[...new Set(r.stripped)].join('  ')}`);
+      if (r.themeError) console.log(`  ⚠ tailwind theme skipped — ${r.themeError}`);
+    }
+    if (!sub || sub === 'lint') {
+      const report = await lintStyles(canvasRoot);
+      const n = report.findings.length;
+      console.log(`${n ? '⚠' : '✓'} lint: ${n} finding${n === 1 ? '' : 's'} (full report: style-report.json in the canvas)`);
+      for (const f of report.findings.slice(0, 30)) {
+        if (f.type === 'duplicate-of-library') console.log(`  · [${f.view}] ${f.selector} duplicates ${f.duplicates} — use the library class instead`);
+        else if (f.type === 'library-lookalike') console.log(`  · [${f.view}] class "${f.class}" looks like a library class but isn't in the synced library`);
+        else if (f.type === 'inline-styles') console.log(`  · [${f.view}] ${f.rules} inline <style> rule(s) — lean on the library`);
+        else if (f.type === 'style-attributes') console.log(`  · [${f.view}] ${f.count} style="" attribute(s)`);
+        else if (f.type === 'repeated-custom-style') console.log(`  · "${f.decls.slice(0, 70)}" repeats across ${f.views.join(', ')} — candidate for the library`);
+      }
+      if (report.findings.length > 30) console.log(`  … ${report.findings.length - 30} more in style-report.json`);
+    }
+  } catch (e) {
+    console.error('✗ ' + e.message);
+    process.exit(1);
+  }
+}
+
 const [cmd, ...rest] = process.argv.slice(2);
 const flags = parseFlags(rest);
 if (cmd === 'init') cmdInit();
+else if (cmd === 'styles') cmdStyles(rest.find((a) => !a.startsWith('--')) || null, flags);
 else cmdServe(flags); // default + `serve`

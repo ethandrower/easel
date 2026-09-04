@@ -9,5 +9,9 @@ This repo uses [Easel](https://github.com/ethandrower/easel) for HTML prototypes
 
 **Sketches** (rough screens with no HTML yet): a view folder whose `view.json` has `"sketch": { "text": "..." }` and no `index.html`. The text is plain notes — `## Region` opens a region of the screen, `- item` says what lives there, `? question` is an open scoping question. You may edit the text to refine a sketch. When asked to design or build a sketch — or when `view.json` carries a `brief` (a promoted sketch) — create `index.html` from the notes: each `##` region becomes a section of the page and each `-` line an element in it; answer `?` questions sensibly and say what you chose. Then remove the `sketch` key (keep `brief`).
 
+**Screen notes & iterations:** a view's `view.json` may carry `notes` — the author's storyboard annotations for that screen. Treat them as the spec when designing or revising it; don't rewrite them unless asked. A view whose `view.json` has `variant: { of, label }` is a lettered iteration of another screen: keep the same content and purpose but take a deliberately different design direction from its base.
+
+**Styles:** the canvas library is synced from the app repo — `design-canvas/shared/library.json` lists the legal classes (regenerate with `npx easel styles sync`). Build screens ONLY with those classes plus plain Tailwind utilities. Never add `<style>` blocks, `style=""` attributes, or invented library-look-alike classes (a new `btn-*`/`badge-*`); if the library lacks something, use utilities and leave an HTML comment noting the gap. `npx easel styles lint` should come back clean for screens you touch.
+
 Never introduce a build step — these are standalone files that live-reload. Full usage: `GUIDE.md` in the Easel repo.
 <!-- easel:end -->

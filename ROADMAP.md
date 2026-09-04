@@ -29,7 +29,10 @@ Now dogfooding on a real product canvas (citemed Evidence Cloud) — items get p
 
 - [ ] npm publish — the `easel` name is TAKEN on npm (someone else's v0.2.6), so `npx easel` installs the wrong package. Publish under a scope (`@ethandrower/easel`) or pick a new name; until then, run from a checkout (`node <easel>/bin/cli.mjs`) or `npm link`. Fix the README quickstart when decided.
 - [x] **Sketch mode** — shipped: `✎ sketch` / `S` drops a rough frame with no HTML (notes in `view.json`, rendered natively as a low-fi wireframe in a screen's footprint), edited in place; links, labels, status and arrange all work on it; **⇧ Promote to design** scaffolds the HTML, keeps the notes as the view's `brief`, and seeds the Claude prompt with them. Next: promote could optionally emit a real low-fi HTML wireframe from the regions instead of the blank template.
-- [ ] Variant/state stacks per view (modal open, empty, error) as child nodes
+- [x] **Storyboard notes** — an annotation strip under every design frame (`view.json.notes`), edited in place, fed to the screen's Claude prompt; promoted sketches land their text here.
+- [x] **Iterations per view** — `iterate` copies a screen as a lettered sibling (`-b`, `-c`) tied to its base with a labeled edge; prompts instruct deliberate divergence. (*State* stacks — modal open / empty / error — still open below.)
+- [x] **Style-library sync + lint** — `easel styles sync` pulls the host repo's Tailwind theme + component CSS into `shared/library.gen.*` + a class inventory the prompts use; `easel styles lint` flags inline styles, duplicates of library classes, library look-alikes, and repeated custom styles (`style-report.json`).
+- [ ] State stacks per view (modal open, empty, error) as child nodes
 - [ ] Module management in-UI (create/rename/recolor/reorder; delete module)
 - [ ] Broken-edge warnings + a kanban (by-status) view toggle
 - [ ] Export (static bundle / PDF of a board)

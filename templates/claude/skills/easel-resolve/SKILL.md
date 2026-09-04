@@ -33,6 +33,8 @@ A comment with `"status": "open"` is a unit of design feedback pinned to an elem
 ## Rules
 
 - Edit only the prototype HTML and its view's `comments.json` / `view.json` / local `assets/`. Never touch another view to satisfy one comment.
+- Respect `view.json` `notes` (the screen's storyboard annotations) as the spec for that screen; a view with `variant: { of, label }` is an iteration — same content as its base, deliberately different design direction.
+- Style only with the synced library classes (`design-canvas/shared/library.json`) plus Tailwind utilities. Never add `<style>` blocks, `style=""` attributes, or new library-look-alike classes — `npx easel styles lint` flags them.
 - Don't run a build; these are standalone files. The running `easel` server live-reloads the viewer automatically after you save.
 - If a comment is ambiguous, make the most reasonable interpretation and note the assumption in your report rather than skipping it.
 - To add a NEW view a comment asks for, mirror the folder shape (`index.html` from `design-canvas/_template.html` + `view.json` + `comments.json`) and add a `link` to it from the parent view's `view.json`.
